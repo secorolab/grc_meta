@@ -1,0 +1,49 @@
+repositories:
+  bdd_collab_bhv_cpp:
+    type: git
+    url: git@github.com:secorolab/bdd_collab_bhv_cpp.git
+    version: rolling
+  bdd_ros2_interfaces:
+    type: git
+    url: git@github.com:secorolab/bdd_ros2_interfaces.git
+    version: main
+  coord-dsl:
+    type: git
+    url: git@github.com:secorolab/coord-dsl.git
+    version: main
+  motion-spec:
+    type: git
+    url: git@github.com:secorolab/motion-spec.git
+    version: crf
+  motion-spec-dsl:
+    type: git
+    url: git@github.com:secorolab/motion-spec-dsl.git
+    version: feat/full-mot-spec
+  motion-spec-dsl-nvim:
+    type: git
+    url: git@github.com:vamsikalagaturu/motion-spec-dsl-nvim.git
+    version: master
+  rdf-utils:
+    type: git
+    url: git@github.com:secorolab/rdf-utils.git
+    version: main
+  rdflib:
+    type: git
+    url: git@github.com:secorolab/rdflib.git
+    version: 7.6.0-fix-multi-type-scoped-context
+  robif2b:
+    type: git
+    url: git@github.com:secorolab/robif2b.git
+    version: dev
+  robotiq_driver_noros:
+    type: git
+    url: git@github.com:secorolab/robotiq_driver_noros.git
+    version: main
+  robotiq_ft:
+    type: git
+    url: git@github.com:secorolab/robotiq_ft.git
+    version: main
+  serial:
+    type: git
+    url: git@github.com:secorolab/serial.git
+    version: noros
