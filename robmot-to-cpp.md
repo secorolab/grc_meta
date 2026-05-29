@@ -17,13 +17,18 @@ sudo apt install libglfw3-dev libgl-dev libegl-dev liborocos-kdl-dev
 Install rdflib first, then the rest with `--no-deps` to prevent rdflib version changes, then install missing transitive deps explicitly:
 
 ```bash
-pip install rdflib
-pip install --no-deps -e $ROOT/src/motion-spec-dsl
-pip install --no-deps -e $ROOT/src/motion-spec
-pip install --no-deps -e $ROOT/src/coord-dsl
-pip install --no-deps -e $ROOT/src/rdf-utils
-pip install "textX[cli]" jinja2 platformdirs pyshacl numpy
+uv venv              # or: python3 -m venv .venv
+source .venv/bin/activate
+
+uv pip install rdflib
+uv pip install --no-deps -e $ROOT/src/motion-spec-dsl
+uv pip install --no-deps -e $ROOT/src/motion-spec
+uv pip install --no-deps -e $ROOT/src/coord-dsl
+uv pip install --no-deps -e $ROOT/src/rdf-utils
+uv pip install "textX[cli]" jinja2 platformdirs pyshacl numpy
 ```
+
+`uv` is recommended for faster installs. Replace `uv pip` with `pip` if not using `uv`.
 
 ### Metamodels
 
