@@ -1,4 +1,8 @@
 repositories:
+  metamodels:
+    type: git
+    url: git@github.com:secorolab/metamodels.git
+    version: feat/runtime-environment-metamodel
   bdd_collab_bhv_cpp:
     type: git
     url: git@github.com:secorolab/bdd_collab_bhv_cpp.git
@@ -15,14 +19,18 @@ repositories:
     type: git
     url: git@github.com:secorolab/motion-spec.git
     version: crf
-  motion-spec-dsl:
+  orocos_kinematics_dynamics:
+    type: git
+    url: git@github.com:secorolab/orocos_kinematics_dynamics.git
+    version: feature/achd_fixed_joint
+   motion-spec-dsl:
     type: git
     url: git@github.com:secorolab/motion-spec-dsl.git
     version: feat/full-mot-spec
-  motion-spec-dsl-nvim:
+  mj_kdl_wrapper:
     type: git
-    url: git@github.com:vamsikalagaturu/motion-spec-dsl-nvim.git
-    version: master
+    url: git@github.com:vamsikalagaturu/mj_kdl_wrapper.git
+    version: main
   rdf-utils:
     type: git
     url: git@github.com:secorolab/rdf-utils.git
