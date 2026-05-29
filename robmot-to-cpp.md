@@ -1,140 +1,121 @@
-# .robmot to C++ Translation Pipeline
+# .robmot to C++ Pipeline
 
-## Required Packages
+A `.robmot` model goes through five stages:
 
-### System Dependencies
+```
+.robmot → JSON-LD → IR (ir.json) → C++ → cmake build → ./main
+```
+
+The `Makefile` (in `bdd_collab_bhv_cpp/models/`) runs the whole chain.
+
+---
+
+## One-time setup
+
+### 1. System packages
 
 ```bash
 sudo apt install libglfw3-dev libgl-dev libegl-dev liborocos-kdl-dev
 ```
 
-### MuJoCo
+### 2. MuJoCo 3.8.0
 
-`mj_kdl_wrapper` has a `FETCH_MUJOCO=ON` CMake option to auto-download MuJoCo. See its repo for details.
+Install to `/opt/mujoco-3.8.0` (or override later with `-DMUJOCO_ROOT=...`).
 
-### Python Packages
-
-Install rdflib first, then the rest with `--no-deps` to prevent rdflib version changes, then install missing transitive deps explicitly:
+### 3. Python env
 
 ```bash
-uv venv              # or: python3 -m venv .venv
-source .venv/bin/activate
+uv venv && source .venv/bin/activate          # or python3 -m venv .venv
 
-uv pip install rdflib
-uv pip install --no-deps -e $ROOT/src/motion-spec-dsl
-uv pip install --no-deps -e $ROOT/src/motion-spec
-uv pip install --no-deps -e $ROOT/src/coord-dsl
-uv pip install --no-deps -e $ROOT/src/rdf-utils
-uv pip install "textX[cli]" jinja2 platformdirs pyshacl numpy
+uv pip install src/rdflib
+uv pip install --no-deps -e src/motion-spec-dsl
+uv pip install --no-deps -e src/motion-spec
+uv pip install --no-deps -e src/coord-dsl
+uv pip install --no-deps -e src/rdf-utils
+uv pip install --no-deps "textX[cli]" jinja2 platformdirs pyshacl numpy
 ```
 
-`uv` is recommended for faster installs. Replace `uv pip` with `pip` if not using `uv`.
+(Install `rdflib` first, then everything else with `--no-deps` so its version
+doesn't get pulled forward.)
 
-### Metamodels
+### 4. Metamodels (private branch — local checkout required)
 
 ```bash
 git clone git@github.com:secorolab/metamodels.git -b feat/runtime-environment-metamodel
-export METAMODELS_PATH=/path/to/metamodels
 ```
 
-Set `METAMODELS_PATH` to the cloned path (required by `jsonld` step). This branch is **not published online** — the local checkout is mandatory for resolving SHACL constraints and ontologies.
-
-### C++ Dependencies (colcon build)
+### 5. C++ workspace
 
 ```bash
-cd $ROOT
+ws=/path/to/workspace
+mkdir -p $ws/src && cd $ws
 colcon build --packages-up-to mj_kdl_wrapper
 ```
 
-## Translation Pipeline
+---
 
-All steps assume `MODEL` is set (e.g., `pick_place`), `GEN=gen/$(MODEL)`, and `METAMODELS_PATH` is exported.
+## Required environment variables
 
-### 1. JSON-LD Generation (`jsonld`)
+Two things must be in your shell environment before invoking `make`:
 
-```bash
-textx generate $MODEL.robmot --target jsonld -o $GEN
-```
+| Variable | What | Example |
+|---|---|---|
+| `METAMODELS_PATH` | Absolute path to the metamodels checkout (step 4). Read by the JSON-LD generator. | `export METAMODELS_PATH=$HOME/work/metamodels` |
+| `INSTALL` | Absolute path to the colcon `install/` dir (step 5). Passed as `CMAKE_PREFIX_PATH`. | `export INSTALL=$ws/install` |
 
-Parses the `.robmot` DSL file using textX grammar from `motion_spec_dsl` and outputs JSON-LD (RDF) to `gen/$MODEL/$MODEL-app.json`. Requires `METAMODELS_PATH` to be set.
+Both can also be passed inline (`make build MODEL=foo INSTALL=$ws/install`) —
+exporting them once per shell is just less typing.
 
-### 2. Intermediate Representation (`ir`)
+Optional: `OROCOS_DIR=/path/to/orocos_kdl` if you built KDL outside the
+workspace.
 
-```bash
-motion-spec-ir-gen $GEN/$MODEL-app.json -o $GEN/ir.json
-```
+---
 
-Validates the RDF graph using SHACL shapes and generates an intermediate representation (`ir.json`) with motion-spec metadata.
-
-### 3. C++ Code Generation (`codegen`)
-
-```bash
-python -m motion_spec.codegen $GEN/ir.json -o $GEN --stst-bin stst
-```
-
-Generates C++ source files (headers in `$GEN/headers/`, `ref_main.cpp`, `CMakeLists.txt`) using StringTemplate templates bundled in `motion_spec`.
-
-### 4. CMake Configure (`configure`)
-
-The Makefile handles this — pass `ROOT` and optionally `OROCOS_DIR`:
+## Running the pipeline
 
 ```bash
-make configure MODEL=<name> ROOT=/path/to/workspace \
-    OROCOS_DIR=/path/to/orocos_kdl/share/orocos_kdl/cmake
+cd bdd_collab_bhv_cpp/models
+
+make build MODEL=pick_place            # .robmot → executable
+make run MODEL=pick_place              # build + run with viewer
+make run-headless MODEL=pick_place     # build + run, no window
 ```
 
-Configures the CMake build with Eigen3, orocos-kdl, and mj_kdl_wrapper dependencies.
-
-### 5. Build (`build`)
+After the first build, iterate with:
 
 ```bash
-cmake --build $GEN/build --parallel $(nproc)
+make just-run MODEL=pick_place         # rebuild C++ only, run with viewer
+make jrh MODEL=pick_place              # rebuild C++ only, run headless
 ```
 
-Compiles the generated C++ into a `main` executable.
+---
 
-### 6. Run (`run`)
+## Makefile targets
 
-```bash
-$GEN/build/main                    # with GUI
-$GEN/build/main --headless --steps 45000  # headless
-```
+The targets form a dependency chain — running any later target runs all
+earlier ones it needs.
 
-## Makefile Variables
+| Target | What it does |
+|---|---|
+| `check-deps` | Verify `textx` and `motion-spec-ir-gen` are on PATH |
+| `jsonld` | `.robmot` → JSON-LD |
+| `ir` | JSON-LD → `ir.json` |
+| `codegen` | `ir.json` → C++ headers + `CMakeLists.txt` |
+| `configure` | run `cmake` |
+| `build` | compile to `gen/<MODEL>/build/main` |
+| `run` / `run-headless` | execute the binary |
+| `just-run` / `jrh` | rebuild C++ only (no regen), then run |
+| `clean` | delete `gen/<MODEL>/` |
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `MODEL`  | **yes** | Model name (matches `.robmot` file) |
-| `ROOT`   | no | Defaults to `$(CURDIR)` |
-| `GEN`    | no | Defaults to `gen/$(MODEL)` |
-| `STST`   | no | StringTemplate binary (default: `stst`) |
-| `STEPS`  | no | Headless sim steps (default: `45000`) |
-| `JOBS`   | no | Parallel build jobs (default: `$(shell nproc)`) |
-| `INSTALL`| no | CMake install prefix (default: `$(ROOT)/install`) |
-| `OROCOS_DIR` | no | Path to orocos_kdl cmake config (needed for custom solver builds) |
+## Makefile variables
 
-## Makefile Targets (dependency chain)
-
-```
-build
-  └─ configure
-       └─ codegen
-            └─ ir
-                 └─ jsonld
-                      ├─ check-deps
-                      └─ *.robmot
-```
-
-| Target | Runs |
-|--------|------|
-| `make check-deps` | Verify tools on PATH |
-| `make jsonld MODEL=<name>` | Step 1 only |
-| `make ir MODEL=<name>` | Steps 1-2 |
-| `make codegen MODEL=<name>` | Steps 1-3 |
-| `make configure MODEL=<name> ROOT=<path>` | Steps 1-4 (add `OROCOS_DIR=...` for custom orocos) |
-| `make build MODEL=<name> ROOT=<path>` | Steps 1-5 (default) |
-| `make run MODEL=<name> ROOT=<path>` | Steps 1-6 (with GUI) |
-| `make run-headless MODEL=<name> ROOT=<path>` | Steps 1-6 (headless) |
-| `make just-run MODEL=<name> ROOT=<path>` | Rebuild and run (no full pipeline) |
-| `make jrh MODEL=<name> ROOT=<path>` | Rebuild and run headless |
-| `make clean MODEL=<name>` | Remove `$GEN/` entirely |
+| Variable | Default | When to set |
+|---|---|---|
+| `MODEL` | — (required) | Pick the `.robmot` to build |
+| `INSTALL` | `$(CURDIR)/install` | **Almost always override** — point at your colcon `install/` |
+| `STEPS` | `45000` | Headless sim duration |
+| `JOBS` | `$(nproc)` | Parallel build jobs |
+| `STST` | `stst` | StringTemplate binary |
+| `OROCOS_DIR` | — | Custom orocos_kdl location |
+| `GEN` | `gen/$(MODEL)` | Output dir |
+| `ROOT` | `$(CURDIR)` | Only used to derive `INSTALL` if you don't set it |
