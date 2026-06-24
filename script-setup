@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage: script-setup <workspace-path> <ros-distro>
+
+Creates and builds a ROS 2 workspace that can run:
+  make run MODEL=pick_place FSM=pick_place.fsm
+
+Environment variables:
+  GRC_GIT_TRANSPORT=ssh|https   Repository URL mode for grc_meta.repos.
+  STST_REF=<git-ref>            STSTv4 revision to checkout.
+USAGE
+}
+
+die() {
+    printf 'Error: %s\n' "$*" >&2
+    exit 1
+}
+
+log() {
+    printf '\n==> %s\n' "$*"
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || die "required command '$1' is missing"
+}
+
+quote_path() {
+    printf '%q' "$1"
+}
+
+# Source a setup/activate file with nounset off: ROS 2 and colcon setup files
+# reference unbound vars (e.g. AMENT_TRACE_SETUP_FILES) and abort under set -u.
+source_env() {
+    set +u
+    # shellcheck disable=SC1090
+    source "$1"
+    set -u
+}
+
+if [ "$#" -ne 2 ]; then
+    usage
+    exit 2
+fi
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPOS_FILE="$SCRIPT_DIR/grc_meta.repos"
+COLCON_META="$SCRIPT_DIR/colcon.meta"
+COLCON_DEFAULTS="$SCRIPT_DIR/colcon_defaults.yaml"
+
+[ -f "$REPOS_FILE" ] || die "missing $REPOS_FILE"
+[ -f "$COLCON_META" ] || die "missing $COLCON_META"
+[ -f "$COLCON_DEFAULTS" ] || die "missing $COLCON_DEFAULTS"
+
+GRC_GIT_TRANSPORT="${GRC_GIT_TRANSPORT:-ssh}"
+STST_REPO="${STST_REPO:-https://github.com/jsnyders/STSTv4.git}"
+STST_REF="${STST_REF:-e6152907c7f82aba7685c4f2630490968ffd6594}"
+ROS_DISTRO="$2"
+
+[ -n "$ROS_DISTRO" ] || die "ros-distro argument is empty"
+[[ "$ROS_DISTRO" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid ros-distro: $ROS_DISTRO"
+ros_setup_file="/opt/ros/$ROS_DISTRO/setup.bash"
+[ -r "$ros_setup_file" ] || die "ROS distro '$ROS_DISTRO' is not available at $ros_setup_file"
+
+mkdir -p "$1"
+WS="$(cd -- "$1" && pwd -P)"
+SRC="$WS/src"
+BIN="$WS/bin"
+THIRD_PARTY="$WS/third_party"
+VENV="$WS/.venv"
+ENV_FILE="$WS/setup-grc.bash"
+GENERATED_REPOS="$WS/.grc_meta.repos"
+
+log "Checking required system packages"
+require_command dpkg-query
+REQUIRED_PKGS="ant build-essential ca-certificates cmake curl default-jre git
+libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev
+liburdfdom-dev liburdfdom-headers-dev make ninja-build pkg-config
+python3-pip python3-venv python3-colcon-common-extensions python3-rosdep
+python3-vcstool unzip"
+missing=""
+for pkg in $REQUIRED_PKGS; do
+    dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed" \
+        || missing="$missing $pkg"
+done
+if [ -n "$missing" ]; then
+    die "Missing system packages:$missing
+
+Install them (needs sudo), then rerun this script:
+  sudo apt-get update && sudo apt-get install -y$missing"
+fi
+
+source_env "$ros_setup_file"
+: "${ROS_DISTRO:?ROS setup did not define ROS_DISTRO}"
+
+log "Creating workspace at $WS"
+mkdir -p "$SRC" "$BIN" "$THIRD_PARTY"
+cp "$COLCON_META" "$WS/colcon.meta"
+cp "$COLCON_DEFAULTS" "$WS/colcon_defaults.yaml"
+
+case "$GRC_GIT_TRANSPORT" in
+    ssh)
+        cp "$REPOS_FILE" "$GENERATED_REPOS"
+        ;;
+    https)
+        sed -E 's#git@github.com:([^/]+)/([^[:space:]]+)#https://github.com/\1/\2#g' \
+            "$REPOS_FILE" > "$GENERATED_REPOS"
+        ;;
+    *)
+        die "GRC_GIT_TRANSPORT must be 'ssh' or 'https'"
+        ;;
+esac
+
+log "Importing workspace repositories with $GRC_GIT_TRANSPORT URLs"
+vcs import "$SRC" < "$GENERATED_REPOS"
+
+# vcs import does not fetch git submodules (e.g. PyKDL's pybind11), so init them.
+log "Initializing git submodules"
+for repo in "$SRC"/*/; do
+    [ -f "${repo}.gitmodules" ] && git -C "$repo" submodule update --init --recursive
+done
+
+log "Installing rosdep dependencies"
+if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
+    die "rosdep is not initialized. Initialize it (the only step needing sudo), then rerun this script:
+  sudo rosdep init"
+fi
+rosdep update --rosdistro "$ROS_DISTRO"
+# Skip vestigial keys with no apt package on recent Ubuntu: serial's catkin
+# buildtool dep (it builds via plain CMake) and PyKDL's python3-future test dep.
+rosdep install --from-paths "$SRC" --ignore-src --rosdistro "$ROS_DISTRO" -y \
+    --skip-keys "catkin python3-future"
+
+log "Creating Python virtual environment"
+# --system-site-packages so ROS 2 build tooling (rosidl needs em/empy,
+# catkin_pkg, ...) stays importable when colcon build runs inside the venv.
+python3 -m venv --system-site-packages "$VENV"
+source_env "$VENV/bin/activate"
+python -m pip install --upgrade pip setuptools wheel
+
+log "Installing Python dependencies and workspace packages"
+python -m pip install \
+    "textX[cli]>=4.1.0" \
+    textx_ls_core \
+    jinja2 \
+    platformdirs \
+    pyshacl \
+    numpy
+
+python -m pip install "$SRC/rdflib"
+python -m pip install --no-deps -e "$SRC/motion-spec"
+python -m pip install --no-deps -e "$SRC/motion-spec-dsl"
+python -m pip install --no-deps -e "$SRC/coord-dsl"
+python -m pip install --no-deps -e "$SRC/rdf-utils"
+
+log "Building STSTv4"
+if [ ! -d "$THIRD_PARTY/STSTv4/.git" ]; then
+    git clone "$STST_REPO" "$THIRD_PARTY/STSTv4"
+fi
+git -C "$THIRD_PARTY/STSTv4" fetch --tags origin
+git -C "$THIRD_PARTY/STSTv4" checkout "$STST_REF"
+ant -f "$THIRD_PARTY/STSTv4/build.xml"
+
+# STSTv4 bundles StringTemplate 4.0.8, but the motion-spec code-generator
+# templates require StringTemplate 4.3.4. Fetch ST4 4.3.4 and its antlr runtime
+# from Maven Central and run stst against those instead of the bundled 4.0.8.
+ST4_JAR="$THIRD_PARTY/STSTv4/lib/ST4-4.3.4.jar"
+ANTLR_RT_JAR="$THIRD_PARTY/STSTv4/lib/antlr-runtime-3.5.3.jar"
+[ -f "$ST4_JAR" ] || curl -fsSL -o "$ST4_JAR" \
+    "https://repo1.maven.org/maven2/org/antlr/ST4/4.3.4/ST4-4.3.4.jar"
+[ -f "$ANTLR_RT_JAR" ] || curl -fsSL -o "$ANTLR_RT_JAR" \
+    "https://repo1.maven.org/maven2/org/antlr/antlr-runtime/3.5.3/antlr-runtime-3.5.3.jar"
+
+cat > "$BIN/stst" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+STST_HOME=$(quote_path "$THIRD_PARTY/STSTv4")
+CP="\$STST_HOME/build/jar/stst.jar:\$STST_HOME/lib/ST4-4.3.4.jar:\$STST_HOME/lib/antlr-runtime-3.5.3.jar"
+exec java -cp "\$CP" jjs.stst.STStandaloneTool "\$@"
+EOF
+chmod +x "$BIN/stst"
+
+log "Writing workspace environment"
+{
+    printf 'source %s\n' "$(quote_path "$ros_setup_file")"
+    printf 'source %s\n' "$(quote_path "$VENV/bin/activate")"
+    printf 'source %s\n' "$(quote_path "$WS/install/setup.bash")"
+    printf 'export METAMODELS_PATH=%s\n' "$(quote_path "$SRC/metamodels")"
+    printf 'export INSTALL=%s\n' "$(quote_path "$WS/install")"
+    printf 'export PATH=%s:$PATH\n' "$(quote_path "$BIN")"
+} > "$ENV_FILE"
+
+log "Building colcon workspace"
+cd "$WS"
+colcon build --base-paths src --metas colcon.meta
+
+log "Verifying pick-place pipeline dependencies"
+source_env "$ENV_FILE"
+cd "$SRC/bdd_collab_bhv_cpp/models"
+make check-deps MODEL=pick_place FSM=pick_place.fsm
+
+log "Setup complete"
+printf 'Source this environment in new shells:\n  source %s\n' "$(quote_path "$ENV_FILE")"

@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage: script-docker [--build] [command ...]
+
+Builds (if needed) and runs the grc_meta dev image with the host display
+(X11 or Wayland) and GPU (NVIDIA via the container toolkit, else /dev/dri for
+Intel/AMD) forwarded, so the MuJoCo GUI example renders on your screen. This
+grc_meta checkout is mounted read-only at /grc_meta. With no command an
+interactive shell is started; inside, run:
+
+  GRC_GIT_TRANSPORT=https /grc_meta/script-setup ws lyrical
+  /grc_meta/script-run-example ws
+
+Options:
+  --build   Rebuild the image even if it already exists.
+
+Environment:
+  ROS_DISTRO   Base ROS 2 distro / image tag (default: lyrical).
+  GRC_IMAGE    Image name to build/run (default: grc_meta:$ROS_DISTRO).
+USAGE
+}
+
+[ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ] && { usage; exit 0; }
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+ROS_DISTRO="${ROS_DISTRO:-lyrical}"
+IMAGE="${GRC_IMAGE:-grc_meta:${ROS_DISTRO}}"
+
+command -v docker >/dev/null 2>&1 || { echo "Error: docker is not installed." >&2; exit 1; }
+
+force_build=0
+[ "${1:-}" = "--build" ] && { force_build=1; shift; }
+if [ "$force_build" -eq 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "==> Building $IMAGE"
+    docker build --build-arg "ROS_DISTRO=${ROS_DISTRO}" -t "$IMAGE" "$SCRIPT_DIR"
+fi
+
+args=( --rm --net=host )
+[ -t 0 ] && args+=( -it ) || args+=( -i )
+
+# Display: forward X11 whenever DISPLAY is set. This also covers Wayland hosts
+# via XWayland, which MuJoCo/GLFW uses.
+display="none"
+if [ -n "${DISPLAY:-}" ] && [ -d /tmp/.X11-unix ]; then
+    args+=( -e "DISPLAY=${DISPLAY}" -v /tmp/.X11-unix:/tmp/.X11-unix )
+    [ -n "${XAUTHORITY:-}" ] && [ -f "${XAUTHORITY}" ] && \
+        args+=( -e XAUTHORITY=/tmp/.docker.xauth -v "${XAUTHORITY}:/tmp/.docker.xauth:ro" )
+    command -v xhost >/dev/null 2>&1 && xhost +local: >/dev/null 2>&1 || true
+    display="x11:${DISPLAY}"
+fi
+# Also forward the native Wayland socket when present (for Wayland-native apps).
+if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ] \
+   && [ -S "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" ]; then
+    args+=( -e "WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
+            -v "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}:/tmp/xdg/${WAYLAND_DISPLAY}" )
+    display="${display}+wayland:${WAYLAND_DISPLAY}"
+fi
+# GLFW needs a valid, mode-700 XDG_RUNTIME_DIR inside the container.
+args+=( -e XDG_RUNTIME_DIR=/tmp/xdg )
+
+# GPU: NVIDIA via the container toolkit, otherwise Intel/AMD via /dev/dri.
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+    args+=( --gpus all -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=all )
+    gpu="nvidia (--gpus all)"
+elif [ -d /dev/dri ]; then
+    args+=( --device /dev/dri )
+    gpu="mesa (/dev/dri)"
+else
+    gpu="software"
+fi
+
+args+=( -v "${SCRIPT_DIR}:/grc_meta:ro" -w /root )
+
+echo "==> image=${IMAGE}  display=${display}  gpu=${gpu}"
+# Create XDG_RUNTIME_DIR (mode 700) before running the requested command (default: bash).
+exec docker run "${args[@]}" "$IMAGE" \
+    bash -lc 'mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"; exec "$@"' _ "${@:-bash}"

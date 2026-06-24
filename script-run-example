@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage: script-run-example <workspace-path>
+
+Runs the default pick-place GUI example:
+  make run MODEL=pick_place FSM=pick_place.fsm
+USAGE
+}
+
+die() {
+    printf 'Error: %s\n' "$*" >&2
+    exit 1
+}
+
+if [ "$#" -ne 1 ]; then
+    usage
+    exit 2
+fi
+
+[ -d "$1" ] || die "workspace path does not exist: $1"
+WS="$(cd -- "$1" && pwd -P)"
+ENV_FILE="$WS/setup-grc.bash"
+MODELS_DIR="$WS/src/bdd_collab_bhv_cpp/models"
+
+[ -r "$ENV_FILE" ] || die "missing $ENV_FILE; run script-setup first"
+[ -d "$MODELS_DIR" ] || die "missing models directory: $MODELS_DIR"
+
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    die "no GUI display detected; set DISPLAY or WAYLAND_DISPLAY before running the GUI example"
+fi
+
+# ROS 2 / colcon setup files reference unbound vars; source them with -u off.
+set +u
+source "$ENV_FILE"
+set -u
+cd "$MODELS_DIR"
+exec make run MODEL=pick_place FSM=pick_place.fsm

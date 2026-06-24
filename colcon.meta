@@ -1,3 +1,19 @@
-build:
-  packages-skip:
-    - ral_demo
+{
+    "names": {
+        "robif2b": {
+            "cmake-args": [
+                "-DENABLE_ETHERCAT=OFF",
+                "-DENABLE_KELO=OFF",
+                "-DENABLE_KORTEX=ON",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DENABLE_KORTEX_API_AUTO_DOWNLOAD=ON"
+            ]
+        },
+        "mj_kdl_wrapper": {
+            "cmake-args": [
+                "-DBUILD_TESTS=ON",
+                "-DMJ_KDL_FETCH_MENAGERIE=ON"
+            ]
+        }
+    }
+}
