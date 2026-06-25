@@ -1,7 +1,7 @@
 # grc_meta
 
-[![ROS 2 Jazzy](https://img.shields.io/badge/ROS%202-Jazzy%20(Ubuntu%2024.04)-22314E?logo=ros)](https://docs.ros.org/en/jazzy/)
-[![ROS 2 Lyrical](https://img.shields.io/badge/ROS%202-Lyrical%20(Ubuntu%2026.04)-22314E?logo=ros)](https://docs.ros.org/en/rolling/)
+[![Jazzy (Ubuntu 24.04)](https://github.com/secorolab/grc_meta/actions/workflows/jazzy.yml/badge.svg)](https://github.com/secorolab/grc_meta/actions/workflows/jazzy.yml)
+[![Lyrical (Ubuntu 26.04)](https://github.com/secorolab/grc_meta/actions/workflows/lyrical.yml/badge.svg)](https://github.com/secorolab/grc_meta/actions/workflows/lyrical.yml)
 
 ## setup
 

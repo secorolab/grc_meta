@@ -1,0 +1,14 @@
+name: Lyrical
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    uses: ./.github/workflows/setup.yml
+    with:
+      ros_distro: lyrical
+    secrets: inherit

@@ -180,7 +180,7 @@ rosdep update --rosdistro "$ROS_DISTRO"
 # Skip keys with no apt package: serial's catkin, PyKDL's python3-future, and
 # kdl_parser's stale ROS 1 deps (all build via plain CMake/ament regardless).
 rosdep install --from-paths "${IMPORTED_DIRS[@]}" --ignore-src --rosdistro "$ROS_DISTRO" -y \
-    --skip-keys "catkin python3-future cmake_modules rosconsole roscpp rostest tinyxml"
+    --skip-keys "catkin python3-future cmake_modules rosconsole roscpp rostest"
 
 { log "Setting up Python virtual environment"; } 2>/dev/null
 # Reuse an existing venv (e.g. created with uv); create one only if absent.

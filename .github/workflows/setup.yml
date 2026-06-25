@@ -1,24 +1,18 @@
-name: CI
+name: setup
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ros_distro:
+        required: true
+        type: string
 
 jobs:
   setup:
-    name: setup (${{ matrix.ros_distro }})
     runs-on: ubuntu-latest
     # The ROS image fixes the Ubuntu base: jazzy -> 24.04, lyrical -> 26.04.
     container:
-      image: ros:${{ matrix.ros_distro }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - ros_distro: jazzy    # Ubuntu 24.04
-          - ros_distro: lyrical  # Ubuntu 26.04
+      image: ros:${{ inputs.ros_distro }}
     steps:
       - name: Install system packages required by script-setup
         run: |
@@ -52,4 +46,4 @@ jobs:
       - name: Run script-setup
         env:
           GRC_GIT_TRANSPORT: https
-        run: ws/src/grc_meta/script-setup --clean ws "${{ matrix.ros_distro }}"
+        run: ws/src/grc_meta/script-setup --clean ws "${{ inputs.ros_distro }}"
