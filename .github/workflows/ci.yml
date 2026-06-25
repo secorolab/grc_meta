@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    name: setup (${{ matrix.ros_distro }})
+    runs-on: ubuntu-latest
+    # The ROS image fixes the Ubuntu base: jazzy -> 24.04, lyrical -> 26.04.
+    container:
+      image: ros:${{ matrix.ros_distro }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: jazzy    # Ubuntu 24.04
+          - ros_distro: lyrical  # Ubuntu 26.04
+    steps:
+      - name: Install system packages required by script-setup
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ant build-essential ca-certificates cmake curl default-jre git \
+            libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev \
+            liburdfdom-dev liburdfdom-headers-dev make ninja-build pkg-config \
+            python3-pip python3-venv python3-colcon-common-extensions \
+            python3-rosdep python3-vcstool unzip
+
+      - name: Checkout grc_meta
+        uses: actions/checkout@v4
+        with:
+          path: ws/src/grc_meta
+
+      - name: Authenticate to private workspace repos
+        env:
+          TOKEN: ${{ secrets.WORKSPACE_REPOS_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            git config --global \
+              url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          else
+            echo "No WORKSPACE_REPOS_TOKEN set; assuming the workspace repos are public."
+          fi
+
+      - name: Initialize rosdep
+        run: rosdep init 2>/dev/null || true
+
+      - name: Run script-setup
+        env:
+          GRC_GIT_TRANSPORT: https
+        run: ws/src/grc_meta/script-setup --clean ws "${{ matrix.ros_distro }}"
