@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euxo pipefail
 
 usage() {
     cat <<'USAGE'
-Usage: script-setup <workspace-path> <ros-distro>
+Usage: script-setup [--clean] <workspace-path> <ros-distro>
 
 Creates and builds a ROS 2 workspace that can run:
   make run MODEL=pick_place FSM=pick_place.fsm
+
+Options:
+  --clean   Remove build/ install/ log/ before building.
 
 Environment variables:
   GRC_GIT_TRANSPORT=ssh|https   Repository URL mode for grc_meta.repos.
@@ -31,14 +34,28 @@ quote_path() {
     printf '%q' "$1"
 }
 
-# Source a setup/activate file with nounset off: ROS 2 and colcon setup files
-# reference unbound vars (e.g. AMENT_TRACE_SETUP_FILES) and abort under set -u.
+# Source a setup/activate file with nounset off (ROS 2/colcon files reference
+# unbound vars) and tracing off (they export huge PATH/LD_LIBRARY_PATH/prefix
+# strings that flood -x output).
 source_env() {
-    set +u
+    set +ux
     # shellcheck disable=SC1090
     source "$1"
-    set -u
+    set -ux
 }
+
+CLEAN=0
+args=()
+{ set +x; } 2>/dev/null  # don't echo this loop on every iteration
+for a in "$@"; do
+    case "$a" in
+        --clean) CLEAN=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *) args+=("$a") ;;
+    esac
+done
+{ set -x; } 2>/dev/null
+set -- "${args[@]}"
 
 if [ "$#" -ne 2 ]; then
     usage
@@ -73,7 +90,12 @@ VENV="$WS/.venv"
 ENV_FILE="$WS/setup-grc.bash"
 GENERATED_REPOS="$WS/.grc_meta.repos"
 
-log "Checking required system packages"
+if [ "$CLEAN" -eq 1 ]; then
+    { log "Cleaning build/ install/ log/"; } 2>/dev/null
+    rm -rf "$WS/build" "$WS/install" "$WS/log"
+fi
+
+{ log "Checking required system packages"; } 2>/dev/null
 require_command dpkg-query
 REQUIRED_PKGS="ant build-essential ca-certificates cmake curl default-jre git
 libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev
@@ -81,10 +103,12 @@ liburdfdom-dev liburdfdom-headers-dev make ninja-build pkg-config
 python3-pip python3-venv python3-colcon-common-extensions python3-rosdep
 python3-vcstool unzip"
 missing=""
+{ set +x; } 2>/dev/null  # don't echo this loop on every iteration
 for pkg in $REQUIRED_PKGS; do
     dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed" \
         || missing="$missing $pkg"
 done
+{ set -x; } 2>/dev/null
 if [ -n "$missing" ]; then
     die "Missing system packages:$missing
 
@@ -95,7 +119,7 @@ fi
 source_env "$ros_setup_file"
 : "${ROS_DISTRO:?ROS setup did not define ROS_DISTRO}"
 
-log "Creating workspace at $WS"
+{ log "Creating workspace at $WS"; } 2>/dev/null
 mkdir -p "$SRC" "$BIN" "$THIRD_PARTY"
 cp "$COLCON_META" "$WS/colcon.meta"
 cp "$COLCON_DEFAULTS" "$WS/colcon_defaults.yaml"
@@ -113,49 +137,90 @@ case "$GRC_GIT_TRANSPORT" in
         ;;
 esac
 
-log "Importing workspace repositories with $GRC_GIT_TRANSPORT URLs"
+{ log "Importing workspace repositories with $GRC_GIT_TRANSPORT URLs"; } 2>/dev/null
 vcs import "$SRC" < "$GENERATED_REPOS"
 
-# vcs import does not fetch git submodules (e.g. PyKDL's pybind11), so init them.
-log "Initializing git submodules"
-for repo in "$SRC"/*/; do
-    [ -f "${repo}.gitmodules" ] && git -C "$repo" submodule update --init --recursive
-done
+# Scope later steps (submodules, rosdep, colcon) to declared repos only, ignoring
+# anything else under src/. These are the 2-space-indented keys in the repos file.
+mapfile -t IMPORTED_DIRS < <(
+    awk '/^  [^[:space:]].*:[[:space:]]*$/ { sub(/:[[:space:]]*$/, ""); sub(/^[[:space:]]+/, ""); print }' \
+        "$GENERATED_REPOS"
+)
+[ "${#IMPORTED_DIRS[@]}" -gt 0 ] || die "no repositories parsed from $GENERATED_REPOS"
+IMPORTED_DIRS=("${IMPORTED_DIRS[@]/#/$SRC/}")
 
-log "Installing rosdep dependencies"
+# vcs import checks out the declared ref but never advances a stale local branch,
+# so fast-forward each repo to its upstream (--ff-only fails on diverged branches
+# rather than running stale code; detached/pinned repos have no upstream).
+{ log "Fast-forwarding workspace repositories to their declared refs"; } 2>/dev/null
+{ set +x; } 2>/dev/null  # don't echo this loop on every iteration
+for repo in "${IMPORTED_DIRS[@]}"; do
+    [ -d "$repo/.git" ] || continue
+    git -C "$repo" fetch --quiet --tags origin
+    if upstream="$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+        git -C "$repo" merge --ff-only --quiet "$upstream"
+    fi
+done
+{ set -x; } 2>/dev/null
+
+# vcs import does not fetch git submodules (e.g. PyKDL's pybind11), so init them.
+{ log "Initializing git submodules"; } 2>/dev/null
+{ set +x; } 2>/dev/null  # don't echo this loop on every iteration
+for repo in "${IMPORTED_DIRS[@]}"; do
+    [ -f "$repo/.gitmodules" ] && git -C "$repo" submodule update --init --recursive
+done
+{ set -x; } 2>/dev/null
+
+{ log "Installing rosdep dependencies"; } 2>/dev/null
 if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
     die "rosdep is not initialized. Initialize it (the only step needing sudo), then rerun this script:
   sudo rosdep init"
 fi
 rosdep update --rosdistro "$ROS_DISTRO"
-# Skip vestigial keys with no apt package on recent Ubuntu: serial's catkin
-# buildtool dep (it builds via plain CMake) and PyKDL's python3-future test dep.
-rosdep install --from-paths "$SRC" --ignore-src --rosdistro "$ROS_DISTRO" -y \
-    --skip-keys "catkin python3-future"
+# Skip keys with no apt package: serial's catkin, PyKDL's python3-future, and
+# kdl_parser's stale ROS 1 deps (all build via plain CMake/ament regardless).
+rosdep install --from-paths "${IMPORTED_DIRS[@]}" --ignore-src --rosdistro "$ROS_DISTRO" -y \
+    --skip-keys "catkin python3-future cmake_modules rosconsole roscpp rostest tinyxml"
 
-log "Creating Python virtual environment"
-# --system-site-packages so ROS 2 build tooling (rosidl needs em/empy,
-# catkin_pkg, ...) stays importable when colcon build runs inside the venv.
-python3 -m venv --system-site-packages "$VENV"
+{ log "Setting up Python virtual environment"; } 2>/dev/null
+# Reuse an existing venv (e.g. created with uv); create one only if absent.
+# --system-site-packages keeps ROS 2 build tooling (rosidl/empy) importable.
+if [ ! -e "$VENV/bin/activate" ]; then
+    python3 -m venv --system-site-packages "$VENV"
+fi
 source_env "$VENV/bin/activate"
 python -m pip install --upgrade pip setuptools wheel
 
-log "Installing Python dependencies and workspace packages"
+{ log "Installing Python dependencies and workspace packages"; } 2>/dev/null
+# empy pinned to 3.3.4: ROS 2's rosidl .em template generators break on empy 4.x.
+# pyparsing is rdflib's core dep; packaging/prettytable/html5rdf are pyshacl's
+# (both rdflib and pyshacl install --no-deps below).
 python -m pip install \
+    "empy==3.3.4" \
     "textX[cli]>=4.1.0" \
     textx_ls_core \
     jinja2 \
     platformdirs \
-    pyshacl \
-    numpy
+    numpy \
+    pyparsing \
+    packaging \
+    prettytable \
+    html5rdf
 
-python -m pip install "$SRC/rdflib"
+# rdflib is a project fork (src/rdflib, v8.x): install editable with --no-deps so
+# the cloned branch wins over pyshacl/owlrl's rdflib<8 pin. Skip when it's already
+# the editable fork to avoid rebuilding it every run.
+if ! python -c "import rdflib,pathlib,sys; sys.exit(0 if pathlib.Path(rdflib.__file__).resolve().is_relative_to(pathlib.Path('$SRC/rdflib').resolve()) else 1)" 2>/dev/null; then
+    python -m pip install --no-deps -e "$SRC/rdflib"
+fi
+python -m pip install --no-deps owlrl pyshacl
+
 python -m pip install --no-deps -e "$SRC/motion-spec"
 python -m pip install --no-deps -e "$SRC/motion-spec-dsl"
 python -m pip install --no-deps -e "$SRC/coord-dsl"
 python -m pip install --no-deps -e "$SRC/rdf-utils"
 
-log "Building STSTv4"
+{ log "Building STSTv4"; } 2>/dev/null
 if [ ! -d "$THIRD_PARTY/STSTv4/.git" ]; then
     git clone "$STST_REPO" "$THIRD_PARTY/STSTv4"
 fi
@@ -182,24 +247,33 @@ exec java -cp "\$CP" jjs.stst.STStandaloneTool "\$@"
 EOF
 chmod +x "$BIN/stst"
 
-log "Writing workspace environment"
+{ log "Writing workspace environment"; } 2>/dev/null
 {
-    printf 'source %s\n' "$(quote_path "$ros_setup_file")"
-    printf 'source %s\n' "$(quote_path "$VENV/bin/activate")"
-    printf 'source %s\n' "$(quote_path "$WS/install/setup.bash")"
+    # Each piece is applied only if not already active, so re-sourcing this file
+    # -- or having ROS/the venv set up externally -- never duplicates or pollutes.
+    printf '[ "${ROS_DISTRO:-}" = %s ] || source %s\n' \
+        "$(quote_path "$ROS_DISTRO")" "$(quote_path "$ros_setup_file")"
+    printf '[ "${VIRTUAL_ENV:-}" = %s ] || source %s\n' \
+        "$(quote_path "$VENV")" "$(quote_path "$VENV/bin/activate")"
+    # local_setup (overlay only) not setup.bash: ROS underlay is already ensured
+    # above, so this avoids re-sourcing/duplicating it.
+    printf 'case ":${COLCON_PREFIX_PATH:-}:" in *":%s:"*) ;; *) source %s ;; esac\n' \
+        "$WS/install" "$(quote_path "$WS/install/local_setup.bash")"
     printf 'export METAMODELS_PATH=%s\n' "$(quote_path "$SRC/metamodels")"
     printf 'export INSTALL=%s\n' "$(quote_path "$WS/install")"
-    printf 'export PATH=%s:$PATH\n' "$(quote_path "$BIN")"
-} > "$ENV_FILE"
+    printf 'case ":${PATH:-}:" in *":%s:"*) ;; *) export PATH=%s:$PATH ;; esac\n' \
+        "$BIN" "$(quote_path "$BIN")"
+} > "$ENV_FILE" 2>/dev/null
 
-log "Building colcon workspace"
+{ log "Building colcon workspace"; } 2>/dev/null
 cd "$WS"
-colcon build --base-paths src --metas colcon.meta
+colcon build --base-paths "${IMPORTED_DIRS[@]}" --metas colcon.meta
 
-log "Verifying pick-place pipeline dependencies"
+{ log "Verifying pick-place pipeline dependencies"; } 2>/dev/null
 source_env "$ENV_FILE"
 cd "$SRC/bdd_collab_bhv_cpp/models"
 make check-deps MODEL=pick_place FSM=pick_place.fsm
 
-log "Setup complete"
-printf 'Source this environment in new shells:\n  source %s\n' "$(quote_path "$ENV_FILE")"
+{ log "Setup complete"
+  printf 'Source this environment in new shells:\n  source %s\n' "$(quote_path "$ENV_FILE")"
+} 2>/dev/null

@@ -59,3 +59,7 @@ repositories:
     type: git
     url: git@github.com:secorolab/serial.git
     version: noros
+  kdl_parser:
+    type: git
+    url: git@github.com:secorolab/kdl_parser.git
+    version: main
