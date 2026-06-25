@@ -10,6 +10,8 @@ on:
 jobs:
   setup:
     runs-on: ubuntu-latest
+    # Overall backstop so a hung build/run can't burn CI minutes indefinitely.
+    timeout-minutes: 10
     # The ROS image fixes the Ubuntu base: jazzy -> 24.04, lyrical -> 26.04.
     container:
       image: ros:${{ inputs.ros_distro }}
@@ -49,6 +51,9 @@ jobs:
         run: ws/src/grc_meta/script-setup --clean ws "${{ inputs.ros_distro }}"
 
       - name: Run pick-place example (headless)
-        env:
-          STEPS: 2000
-        run: ws/src/grc_meta/script-run-example --headless ws
+        # Pick-place finishes in well under a minute; cap it so a deadlock
+        # (which won't advance STEPS) fails fast instead of hanging.
+        timeout-minutes: 1
+        run: |
+          ws/src/grc_meta/script-run-example --headless ws 2>&1 | tee run.log
+          grep -q '/S_DONE' run.log || { echo "::error::pick-place FSM did not reach S_DONE"; exit 1; }

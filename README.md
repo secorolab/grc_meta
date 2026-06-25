@@ -36,10 +36,11 @@ ws/src/grc_meta/script-run-example ws
 ```
 
 To run it without a display (e.g. in CI), use `--headless`, which steps the
-simulation and FSM without opening a window (`STEPS=<n>` bounds the run):
+simulation and FSM without opening a window. It runs until the FSM reaches
+`S_DONE`; `STEPS=<n>` (default 45000) is the safety cap on how long it waits:
 
 ```bash
-STEPS=2000 ws/src/grc_meta/script-run-example --headless ws
+ws/src/grc_meta/script-run-example --headless ws
 ```
 
 ### docker
