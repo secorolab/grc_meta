@@ -47,3 +47,8 @@ jobs:
         env:
           GRC_GIT_TRANSPORT: https
         run: ws/src/grc_meta/script-setup --clean ws "${{ inputs.ros_distro }}"
+
+      - name: Run pick-place example (headless)
+        env:
+          STEPS: 2000
+        run: ws/src/grc_meta/script-run-example --headless ws

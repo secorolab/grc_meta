@@ -3,10 +3,14 @@ set -euo pipefail
 
 usage() {
     cat <<'USAGE'
-Usage: script-run-example <workspace-path>
+Usage: script-run-example [--headless] <workspace-path>
 
-Runs the default pick-place GUI example:
+Runs the default pick-place example:
   make run MODEL=pick_place FSM=pick_place.fsm
+
+Options:
+  --headless   Run without a GUI (make run-headless); needs no display.
+               Honors STEPS=<n> from the environment.
 USAGE
 }
 
@@ -14,6 +18,17 @@ die() {
     printf 'Error: %s\n' "$*" >&2
     exit 1
 }
+
+HEADLESS=0
+args=()
+for a in "$@"; do
+    case "$a" in
+        --headless) HEADLESS=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *) args+=("$a") ;;
+    esac
+done
+set -- "${args[@]}"
 
 if [ "$#" -ne 1 ]; then
     usage
@@ -28,8 +43,11 @@ MODELS_DIR="$WS/src/bdd_collab_bhv_cpp/models"
 [ -r "$ENV_FILE" ] || die "missing $ENV_FILE; run script-setup first"
 [ -d "$MODELS_DIR" ] || die "missing models directory: $MODELS_DIR"
 
-if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
-    die "no GUI display detected; set DISPLAY or WAYLAND_DISPLAY before running the GUI example"
+target="run"
+if [ "$HEADLESS" -eq 1 ]; then
+    target="run-headless"
+elif [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    die "no GUI display detected; set DISPLAY/WAYLAND_DISPLAY, or pass --headless"
 fi
 
 # ROS 2 / colcon setup files reference unbound vars; source them with -u off.
@@ -37,4 +55,4 @@ set +u
 source "$ENV_FILE"
 set -u
 cd "$MODELS_DIR"
-exec make run MODEL=pick_place FSM=pick_place.fsm
+exec make "$target" MODEL=pick_place FSM=pick_place.fsm
