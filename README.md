@@ -27,10 +27,27 @@ prints the `apt-get install` line and exits so you can install them (the only
 step needing sudo) and rerun. It then imports the workspace repositories,
 creates `.venv`, installs the Python workspace packages, builds STSTv4 (pinned,
 run against StringTemplate 4.3.4), runs `colcon build`, and writes
-`ws/setup-grc.bash`.
+`ws/setup-grc.<ext>` (`.zsh` when `$SHELL` is zsh, `.bash` otherwise).
 
-Run the default pick-place GUI example with:
+**Modes:**
 
+| Flag | What it does |
+|------|-------------|
+| *(none)* | Full setup: import, fast-forward, rosdep, venv, stst, build, verify |
+| `--ff` | Fast-forward repos and submodules only (skip rosdep/venv/stst/build) |
+| `--build` | Rebuild only (skip import/ff/submodules — assumes already set up) |
+
+Example — fast-forward existing repos without rebuilding:
+```bash
+ws/src/grc_meta/script-setup --ff ws "$ros_distro"
+```
+
+Example — rebuild after pulling:
+```bash
+ws/src/grc_meta/script-setup --build ws "$ros_distro"
+```
+
+Run the default pick-place example with:
 ```bash
 ws/src/grc_meta/script-run-example ws
 ```

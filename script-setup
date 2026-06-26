@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
-set -euxo pipefail
+set -euo pipefail
+
+BOLD='\033[1m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+exec 5>&1  # save a copy of stdout for run() traces
 
 usage() {
     cat <<'USAGE'
-Usage: script-setup [--clean] <workspace-path> <ros-distro>
+Usage: script-setup [--clean] [--ff|--build] <workspace-path> <ros-distro>
 
 Creates and builds a ROS 2 workspace that can run:
   make run MODEL=pick_place FSM=pick_place.fsm
+
+Modes (default: full setup & build):
+  --ff      Fast-forward repos and submodules only (skip build).
+  --build   Rebuild only (assumes --ff or full setup was already run).
 
 Options:
   --clean   Remove build/ install/ log/ before building.
@@ -14,16 +27,25 @@ Options:
 Environment variables:
   GRC_GIT_TRANSPORT=ssh|https   Repository URL mode for grc_meta.repos.
   STST_REF=<git-ref>            STSTv4 revision to checkout.
+  VERBOSE=1                     Print command traces for debugging.
+  GRC_SETUP_QUIET=1             Suppress the final line in the generated env file.
 USAGE
 }
 
 die() {
-    printf 'Error: %s\n' "$*" >&2
+    printf "${BOLD}${RED}Error: %s${NC}\n" "$*" >&2
     exit 1
 }
 
 log() {
-    printf '\n==> %s\n' "$*"
+    printf "\n${BOLD}${CYAN}==> %s${NC}\n" "$*"
+}
+
+run() {
+    printf "${YELLOW}+" >&5
+    printf ' %q' "$@" >&5
+    printf "${NC}\n" >&5
+    "$@"
 }
 
 require_command() {
@@ -34,27 +56,28 @@ quote_path() {
     printf '%q' "$1"
 }
 
-# Source a setup/activate file with nounset off (ROS 2/colcon files reference
-# unbound vars) and tracing off (they export huge PATH/LD_LIBRARY_PATH/prefix
-# strings that flood -x output).
+# Source a setup/activate file with nounset off; ROS 2/colcon files reference
+# unbound vars. Do not enable xtrace here: those files export huge paths.
 source_env() {
-    set +ux
+    [ -r "$1" ] || die "cannot source missing file: $1"
+    set +u
     # shellcheck disable=SC1090
     source "$1"
-    set -ux
+    set -u
 }
 
 CLEAN=0
+MODE=full
 args=()
-{ set +x; } 2>/dev/null  # don't echo this loop on every iteration
 for a in "$@"; do
     case "$a" in
         --clean) CLEAN=1 ;;
+        --ff)    MODE=ff ;;
+        --build) MODE=build ;;
         -h|--help) usage; exit 0 ;;
         *) args+=("$a") ;;
     esac
 done
-{ set -x; } 2>/dev/null
 set -- "${args[@]}"
 
 if [ "$#" -ne 2 ]; then
@@ -79,6 +102,10 @@ ROS_DISTRO="$2"
 [ -n "$ROS_DISTRO" ] || die "ros-distro argument is empty"
 [[ "$ROS_DISTRO" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid ros-distro: $ROS_DISTRO"
 ros_setup_file="/opt/ros/$ROS_DISTRO/setup.bash"
+case "${SHELL##*/}" in
+    zsh) shell_ext=".zsh"  ;;
+    *)   shell_ext=".bash" ;;
+esac
 [ -r "$ros_setup_file" ] || die "ROS distro '$ROS_DISTRO' is not available at $ros_setup_file"
 
 mkdir -p "$1"
@@ -87,28 +114,28 @@ SRC="$WS/src"
 BIN="$WS/bin"
 THIRD_PARTY="$WS/third_party"
 VENV="$WS/.venv"
-ENV_FILE="$WS/setup-grc.bash"
+ENV_FILE="$WS/setup-grc${shell_ext}"
 GENERATED_REPOS="$WS/.grc_meta.repos"
 
 if [ "$CLEAN" -eq 1 ]; then
-    { log "Cleaning build/ install/ log/"; } 2>/dev/null
-    rm -rf "$WS/build" "$WS/install" "$WS/log"
+    log "Cleaning build/ install/ log/"
+    run rm -rf "$WS/build" "$WS/install" "$WS/log"
 fi
 
-{ log "Checking required system packages"; } 2>/dev/null
+log "Checking required system packages"
 require_command dpkg-query
 REQUIRED_PKGS="ant build-essential ca-certificates cmake curl default-jre git
 libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev
 liburdfdom-dev liburdfdom-headers-dev make ninja-build pkg-config
 python3-pip python3-venv python3-colcon-common-extensions python3-rosdep
 python3-vcstool unzip"
+printf "${YELLOW}+ dpkg-query -W -f='\${Status}' %s${NC}\n" $(echo $REQUIRED_PKGS) >&5
 missing=""
-{ set +x; } 2>/dev/null  # don't echo this loop on every iteration
 for pkg in $REQUIRED_PKGS; do
-    dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed" \
+    dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null \
+        | grep -q "install ok installed" \
         || missing="$missing $pkg"
 done
-{ set -x; } 2>/dev/null
 if [ -n "$missing" ]; then
     die "Missing system packages:$missing
 
@@ -119,26 +146,38 @@ fi
 source_env "$ros_setup_file"
 : "${ROS_DISTRO:?ROS setup did not define ROS_DISTRO}"
 
-{ log "Creating workspace at $WS"; } 2>/dev/null
-mkdir -p "$SRC" "$BIN" "$THIRD_PARTY"
-cp "$COLCON_META" "$WS/colcon.meta"
-cp "$COLCON_DEFAULTS" "$WS/colcon_defaults.yaml"
+require_command vcs
+require_command rosdep
+require_command colcon
+require_command python3
+require_command git
+require_command ant
+require_command curl
 
-case "$GRC_GIT_TRANSPORT" in
-    ssh)
-        cp "$REPOS_FILE" "$GENERATED_REPOS"
-        ;;
-    https)
-        sed -E 's#git@github.com:([^/]+)/([^[:space:]]+)#https://github.com/\1/\2#g' \
-            "$REPOS_FILE" > "$GENERATED_REPOS"
-        ;;
-    *)
-        die "GRC_GIT_TRANSPORT must be 'ssh' or 'https'"
-        ;;
-esac
+if [ "$MODE" != "build" ]; then
+    if [ ! -f "$WS/colcon.meta" ]; then
+        log "Preparing workspace at $WS"
+        run mkdir -p "$SRC" "$BIN" "$THIRD_PARTY"
+        run cp "$COLCON_META" "$WS/colcon.meta"
+        run cp "$COLCON_DEFAULTS" "$WS/colcon_defaults.yaml"
+    fi
 
-{ log "Importing workspace repositories with $GRC_GIT_TRANSPORT URLs"; } 2>/dev/null
-vcs import "$SRC" < "$GENERATED_REPOS"
+    case "$GRC_GIT_TRANSPORT" in
+        ssh)
+            run cp "$REPOS_FILE" "$GENERATED_REPOS"
+            ;;
+        https)
+            run sed -E 's#git@github.com:([^/]+)/([^[:space:]]+)#https://github.com/\1/\2#g' \
+                "$REPOS_FILE" > "$GENERATED_REPOS"
+            ;;
+        *)
+            die "GRC_GIT_TRANSPORT must be 'ssh' or 'https'"
+            ;;
+    esac
+
+    log "Importing workspace repositories with $GRC_GIT_TRANSPORT URLs"
+    run vcs import "$SRC" < "$GENERATED_REPOS"
+fi
 
 # Scope later steps (submodules, rosdep, colcon) to declared repos only, ignoring
 # anything else under src/. These are the 2-space-indented keys in the repos file.
@@ -149,131 +188,198 @@ mapfile -t IMPORTED_DIRS < <(
 [ "${#IMPORTED_DIRS[@]}" -gt 0 ] || die "no repositories parsed from $GENERATED_REPOS"
 IMPORTED_DIRS=("${IMPORTED_DIRS[@]/#/$SRC/}")
 
-# vcs import checks out the declared ref but never advances a stale local branch,
-# so fast-forward each repo to its upstream (--ff-only fails on diverged branches
-# rather than running stale code; detached/pinned repos have no upstream).
-{ log "Fast-forwarding workspace repositories to their declared refs"; } 2>/dev/null
-{ set +x; } 2>/dev/null  # don't echo this loop on every iteration
-for repo in "${IMPORTED_DIRS[@]}"; do
-    [ -d "$repo/.git" ] || continue
-    git -C "$repo" fetch --quiet --tags origin
-    if upstream="$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
-        git -C "$repo" merge --ff-only --quiet "$upstream"
-    fi
-done
-{ set -x; } 2>/dev/null
+if [ "$MODE" != "build" ]; then
+    # vcs import checks out the declared ref but never advances a stale local branch,
+    # so fast-forward each repo to its upstream (--ff-only fails on diverged branches
+    # rather than running stale code; detached/pinned repos have no upstream).
+    log "Fast-forwarding workspace repositories"
+    for repo in "${IMPORTED_DIRS[@]}"; do
+        [ -d "$repo/.git" ] || continue
+        printf "  ${YELLOW}%s${NC}\n" "$repo"
+        run git -C "$repo" fetch --quiet --tags origin
+        if upstream="$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+            run git -C "$repo" merge --ff-only --quiet "$upstream"
+        fi
+    done
 
-# vcs import does not fetch git submodules (e.g. PyKDL's pybind11), so init them.
-{ log "Initializing git submodules"; } 2>/dev/null
-{ set +x; } 2>/dev/null  # don't echo this loop on every iteration
-for repo in "${IMPORTED_DIRS[@]}"; do
-    [ -f "$repo/.gitmodules" ] && git -C "$repo" submodule update --init --recursive
-done
-{ set -x; } 2>/dev/null
+    # vcs import does not fetch git submodules (e.g. PyKDL's pybind11), so init them.
+    log "Initializing git submodules"
+    for repo in "${IMPORTED_DIRS[@]}"; do
+        [ -f "$repo/.gitmodules" ] && {
+            printf "  ${YELLOW}%s${NC}\n" "$repo"
+            run git -C "$repo" submodule update --init --recursive
+        }
+    done
+fi
 
-{ log "Installing rosdep dependencies"; } 2>/dev/null
-if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
-    die "rosdep is not initialized. Initialize it (the only step needing sudo), then rerun this script:
+if [ "$MODE" = "full" ]; then
+    log "Installing rosdep dependencies"
+    if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
+        die "rosdep is not initialized. Initialize it (the only step needing sudo), then rerun this script:
   sudo rosdep init"
-fi
-rosdep update --rosdistro "$ROS_DISTRO"
-# Skip keys with no apt package: serial's catkin, PyKDL's python3-future, and
-# kdl_parser's stale ROS 1 deps (all build via plain CMake/ament regardless).
-rosdep install --from-paths "${IMPORTED_DIRS[@]}" --ignore-src --rosdistro "$ROS_DISTRO" -y \
-    --skip-keys "catkin python3-future cmake_modules rosconsole roscpp rostest"
+    fi
+    run rosdep update --rosdistro "$ROS_DISTRO"
+    # Skip keys with no apt package: serial's catkin, PyKDL's python3-future, and
+    # kdl_parser's stale ROS 1 deps (all build via plain CMake/ament regardless).
+    run rosdep install --from-paths "${IMPORTED_DIRS[@]}" --ignore-src --rosdistro "$ROS_DISTRO" -y \
+        --skip-keys "catkin python3-future cmake_modules rosconsole roscpp rostest"
 
-{ log "Setting up Python virtual environment"; } 2>/dev/null
-# Reuse an existing venv (e.g. created with uv); create one only if absent.
-# --system-site-packages keeps ROS 2 build tooling (rosidl/empy) importable.
-if [ ! -e "$VENV/bin/activate" ]; then
-    python3 -m venv --system-site-packages "$VENV"
-fi
-source_env "$VENV/bin/activate"
-python -m pip install --upgrade pip setuptools wheel
+    log "Setting up Python virtual environment"
+    # Reuse an existing venv (e.g. created with uv); create one only if absent.
+    # --system-site-packages keeps ROS 2 build tooling (rosidl/empy) importable.
+    if [ ! -e "$VENV/bin/activate" ]; then
+        run python3 -m venv --system-site-packages "$VENV"
+    fi
+    source_env "$VENV/bin/activate"
+    run python -m pip install --upgrade pip setuptools wheel
 
-{ log "Installing Python dependencies and workspace packages"; } 2>/dev/null
-# empy pinned to 3.3.4: ROS 2's rosidl .em template generators break on empy 4.x.
-# pyparsing is rdflib's core dep; packaging/prettytable/html5rdf are pyshacl's
-# (both rdflib and pyshacl install --no-deps below).
-python -m pip install \
-    "empy==3.3.4" \
-    "textX[cli]>=4.1.0" \
-    textx_ls_core \
-    jinja2 \
-    platformdirs \
-    numpy \
-    pyparsing \
-    packaging \
-    prettytable \
-    html5rdf
+    log "Installing Python dependencies and workspace packages"
+    # empy pinned to 3.3.4: ROS 2's rosidl .em template generators break on empy 4.x.
+    # pyparsing is rdflib's core dep; packaging/prettytable/html5rdf are pyshacl's
+    # (both rdflib and pyshacl install --no-deps below).
+    run python -m pip install \
+        "empy==3.3.4" \
+        "textX[cli]>=4.1.0" \
+        textx_ls_core \
+        jinja2 \
+        platformdirs \
+        numpy \
+        pyparsing \
+        packaging \
+        prettytable \
+        html5rdf
 
-# rdflib is a project fork (src/rdflib, v8.x): install editable with --no-deps so
-# the cloned branch wins over pyshacl/owlrl's rdflib<8 pin. Skip when it's already
-# the editable fork to avoid rebuilding it every run.
-if ! python -c "import rdflib,pathlib,sys; sys.exit(0 if pathlib.Path(rdflib.__file__).resolve().is_relative_to(pathlib.Path('$SRC/rdflib').resolve()) else 1)" 2>/dev/null; then
-    python -m pip install --no-deps -e "$SRC/rdflib"
-fi
-python -m pip install --no-deps owlrl pyshacl
+    # rdflib is a project fork (src/rdflib, v8.x): install editable with --no-deps so
+    # the cloned branch wins over pyshacl/owlrl's rdflib<8 pin. Skip when it's already
+    # the editable fork to avoid rebuilding it every run.
+    if ! python -c "import rdflib,pathlib,sys; sys.exit(0 if pathlib.Path(rdflib.__file__).resolve().is_relative_to(pathlib.Path('$SRC/rdflib').resolve()) else 1)" 2>/dev/null; then
+        run python -m pip install --no-deps -e "$SRC/rdflib"
+    fi
+    run python -m pip install --no-deps owlrl pyshacl
 
-python -m pip install --no-deps -e "$SRC/motion-spec"
-python -m pip install --no-deps -e "$SRC/motion-spec-dsl"
-python -m pip install --no-deps -e "$SRC/coord-dsl"
-python -m pip install --no-deps -e "$SRC/rdf-utils"
+    run python -m pip install --no-deps -e "$SRC/motion-spec"
+    run python -m pip install --no-deps -e "$SRC/motion-spec-dsl"
+    run python -m pip install --no-deps -e "$SRC/coord-dsl"
+    run python -m pip install --no-deps -e "$SRC/rdf-utils"
 
-{ log "Building STSTv4"; } 2>/dev/null
-if [ ! -d "$THIRD_PARTY/STSTv4/.git" ]; then
-    git clone "$STST_REPO" "$THIRD_PARTY/STSTv4"
-fi
-git -C "$THIRD_PARTY/STSTv4" fetch --tags origin
-git -C "$THIRD_PARTY/STSTv4" checkout "$STST_REF"
-ant -f "$THIRD_PARTY/STSTv4/build.xml"
+    if ! command -v stst >/dev/null 2>&1; then
+        log "Building STSTv4"
+        if [ ! -d "$THIRD_PARTY/STSTv4/.git" ]; then
+            run git clone "$STST_REPO" "$THIRD_PARTY/STSTv4"
+        fi
+        run git -C "$THIRD_PARTY/STSTv4" fetch --tags origin
+        run git -C "$THIRD_PARTY/STSTv4" checkout "$STST_REF"
+        run ant -f "$THIRD_PARTY/STSTv4/build.xml"
 
-# STSTv4 bundles StringTemplate 4.0.8, but the motion-spec code-generator
-# templates require StringTemplate 4.3.4. Fetch ST4 4.3.4 and its antlr runtime
-# from Maven Central and run stst against those instead of the bundled 4.0.8.
-ST4_JAR="$THIRD_PARTY/STSTv4/lib/ST4-4.3.4.jar"
-ANTLR_RT_JAR="$THIRD_PARTY/STSTv4/lib/antlr-runtime-3.5.3.jar"
-[ -f "$ST4_JAR" ] || curl -fsSL -o "$ST4_JAR" \
-    "https://repo1.maven.org/maven2/org/antlr/ST4/4.3.4/ST4-4.3.4.jar"
-[ -f "$ANTLR_RT_JAR" ] || curl -fsSL -o "$ANTLR_RT_JAR" \
-    "https://repo1.maven.org/maven2/org/antlr/antlr-runtime/3.5.3/antlr-runtime-3.5.3.jar"
+        # STSTv4 bundles StringTemplate 4.0.8, but the motion-spec code-generator
+        # templates require StringTemplate 4.3.4. Fetch ST4 4.3.4 and its antlr runtime
+        # from Maven Central and run stst against those instead of the bundled 4.0.8.
+        ST4_JAR="$THIRD_PARTY/STSTv4/lib/ST4-4.3.4.jar"
+        ANTLR_RT_JAR="$THIRD_PARTY/STSTv4/lib/antlr-runtime-3.5.3.jar"
+        [ -f "$ST4_JAR" ] || run curl -fsSL -o "$ST4_JAR" \
+            "https://repo1.maven.org/maven2/org/antlr/ST4/4.3.4/ST4-4.3.4.jar"
+        [ -f "$ANTLR_RT_JAR" ] || run curl -fsSL -o "$ANTLR_RT_JAR" \
+            "https://repo1.maven.org/maven2/org/antlr/antlr-runtime/3.5.3/antlr-runtime-3.5.3.jar"
 
-cat > "$BIN/stst" <<EOF
+        cat > "$BIN/stst" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 STST_HOME=$(quote_path "$THIRD_PARTY/STSTv4")
 CP="\$STST_HOME/build/jar/stst.jar:\$STST_HOME/lib/ST4-4.3.4.jar:\$STST_HOME/lib/antlr-runtime-3.5.3.jar"
 exec java -cp "\$CP" jjs.stst.STStandaloneTool "\$@"
 EOF
-chmod +x "$BIN/stst"
+        chmod +x "$BIN/stst"
+    fi
+fi
 
-{ log "Writing workspace environment"; } 2>/dev/null
-{
-    # Each piece is applied only if not already active, so re-sourcing this file
-    # -- or having ROS/the venv set up externally -- never duplicates or pollutes.
-    printf '[ "${ROS_DISTRO:-}" = %s ] || source %s\n' \
-        "$(quote_path "$ROS_DISTRO")" "$(quote_path "$ros_setup_file")"
-    printf '[ "${VIRTUAL_ENV:-}" = %s ] || source %s\n' \
-        "$(quote_path "$VENV")" "$(quote_path "$VENV/bin/activate")"
-    # local_setup (overlay only) not setup.bash: ROS underlay is already ensured
-    # above, so this avoids re-sourcing/duplicating it.
-    printf 'case ":${COLCON_PREFIX_PATH:-}:" in *":%s:"*) ;; *) source %s ;; esac\n' \
-        "$WS/install" "$(quote_path "$WS/install/local_setup.bash")"
-    printf 'export METAMODELS_PATH=%s\n' "$(quote_path "$SRC/metamodels")"
-    printf 'export INSTALL=%s\n' "$(quote_path "$WS/install")"
-    printf 'case ":${PATH:-}:" in *":%s:"*) ;; *) export PATH=%s:$PATH ;; esac\n' \
-        "$BIN" "$(quote_path "$BIN")"
-} > "$ENV_FILE" 2>/dev/null
+if [ "$MODE" != "ff" ]; then
+    log "Writing workspace environment"
+    cat > "$ENV_FILE" <<EOF
+# Generated by grc_meta/script-setup. Source this file; do not execute it.
+if [ -n "\${BASH_VERSION:-}" ] && [ "\${BASH_SOURCE[0]}" = "\$0" ]; then
+    printf 'This file must be sourced, not executed:\\n  source %s\\n' "$(quote_path "$ENV_FILE")" >&2
+    exit 2
+fi
 
-{ log "Building colcon workspace"; } 2>/dev/null
-cd "$WS"
-colcon build --base-paths "${IMPORTED_DIRS[@]}" --metas colcon.meta
+_grc_fail() {
+    printf '%s\\n' "\$*" >&2
+    return 1
+}
 
-{ log "Verifying pick-place pipeline dependencies"; } 2>/dev/null
-source_env "$ENV_FILE"
-cd "$SRC/bdd_collab_bhv_cpp/models"
-make check-deps MODEL=pick_place FSM=pick_place.fsm
+_grc_source() {
+    [ -r "\$1" ] || { _grc_fail "missing \$1"; return 1; }
+    set +u
+    # shellcheck disable=SC1090
+    . "\$1" 2>/dev/null
+    _grc_status=\$?
+    [ "\$_grc_status" -eq 0 ] || { _grc_fail "failed to source \$1"; return "\$_grc_status"; }
+}
 
-{ log "Setup complete"
-  printf 'Source this environment in new shells:\n  source %s\n' "$(quote_path "$ENV_FILE")"
-} 2>/dev/null
+_grc_prepend_path() {
+    [ -d "\$1" ] || return 0
+    case ":\${PATH:-}:" in
+        *":\$1:"*) ;;
+        *) export PATH="\$1\${PATH:+:\$PATH}" ;;
+    esac
+}
+
+# Save and clear overlay paths so ROS setup doesn't chase missing installs
+_grc_saved_colcon="\${COLCON_PREFIX_PATH:-}"
+_grc_saved_ament="\${AMENT_PREFIX_PATH:-}"
+unset COLCON_PREFIX_PATH AMENT_PREFIX_PATH
+
+if [ "\${ROS_DISTRO:-}" != "$(quote_path "$ROS_DISTRO")" ]; then
+    printf 'sourcing %s\\n' "/opt/ros/$ROS_DISTRO/setup$shell_ext"
+    set +u
+    . "/opt/ros/$ROS_DISTRO/setup$shell_ext" 2>/dev/null || true
+fi
+
+if [ "\${VIRTUAL_ENV:-}" != "$(quote_path "$VENV")" ]; then
+    printf 'sourcing %s\\n' "$(quote_path "$VENV/bin/activate")"
+    _grc_source "$(quote_path "$VENV/bin/activate")" || _grc_fail "Python venv activation had issues: $(quote_path "$VENV/bin/activate")"
+fi
+
+# Restore overlay paths for the workspace overlay logic below
+[ -n "\$_grc_saved_colcon" ] && export COLCON_PREFIX_PATH="\$_grc_saved_colcon"
+[ -n "\$_grc_saved_ament" ] && export AMENT_PREFIX_PATH="\$_grc_saved_ament"
+unset _grc_saved_colcon _grc_saved_ament
+
+if [ -r "$(quote_path "$WS/install/local_setup$shell_ext")" ]; then
+    case ":\${COLCON_PREFIX_PATH:-}:" in
+        *":$(quote_path "$WS/install"):"*) ;;
+        *)
+            printf 'sourcing %s\\n' "$(quote_path "$WS/install/local_setup$shell_ext")"
+            _grc_source "$(quote_path "$WS/install/local_setup$shell_ext")" || _grc_fail "colcon overlay setup had issues: $(quote_path "$WS/install/local_setup$shell_ext")"
+            ;;
+    esac
+else
+    printf 'grc setup: warning: install overlay missing; run script-setup first or rebuild with colcon.\\n' >&2
+fi
+
+printf 'export METAMODELS_PATH=%s\\n' "$(quote_path "$SRC/metamodels")"
+export METAMODELS_PATH=$(quote_path "$SRC/metamodels")
+printf 'export INSTALL=%s\\n' "$(quote_path "$WS/install")"
+export INSTALL=$(quote_path "$WS/install")
+printf 'add to PATH: %s\\n' "$(quote_path "$BIN")"
+_grc_prepend_path "$(quote_path "$BIN")"
+
+unset -f _grc_fail _grc_source _grc_prepend_path
+set +u
+[ "\${GRC_SETUP_QUIET:-0}" = 1 ] || printf 'GRC environment ready: %s\\n' "$(quote_path "$WS")"
+EOF
+fi
+
+if [ "$MODE" != "ff" ]; then
+    log "Building colcon workspace"
+    cd "$WS"
+    run colcon build --base-paths "${IMPORTED_DIRS[@]}" --metas colcon.meta
+
+    log "Verifying pick-place pipeline dependencies"
+    source_env "$ENV_FILE"
+    cd "$SRC/bdd_collab_bhv_cpp/models"
+    run make check-deps MODEL=pick_place FSM=pick_place_single.fsm
+fi
+
+log "Setup complete"
+printf "${GREEN}Source this environment in new shells:${NC}\n"
+printf "  ${CYAN}source %s${NC}\n" "$(quote_path "$ENV_FILE")"
