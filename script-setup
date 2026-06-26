@@ -15,7 +15,7 @@ usage() {
 Usage: script-setup [--clean] [--ff|--build] <workspace-path> <ros-distro>
 
 Creates and builds a ROS 2 workspace that can run:
-  make run MODEL=pick_place FSM=pick_place.fsm
+  make run MODEL=pick_place_single FSM=pick_place_single.fsm
 
 Modes (default: full setup & build):
   --ff      Fast-forward repos and submodules only (skip build).
@@ -377,7 +377,7 @@ if [ "$MODE" != "ff" ]; then
     log "Verifying pick-place pipeline dependencies"
     source_env "$ENV_FILE"
     cd "$SRC/bdd_collab_bhv_cpp/models"
-    run make check-deps MODEL=pick_place FSM=pick_place_single.fsm
+    run make check-deps MODEL=pick_place_single FSM=pick_place_single.fsm
 fi
 
 log "Setup complete"

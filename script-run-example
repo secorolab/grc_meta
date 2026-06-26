@@ -6,7 +6,7 @@ usage() {
 Usage: script-run-example [--headless] <workspace-path>
 
 Runs the default pick-place example:
-  make run MODEL=pick_place FSM=pick_place.fsm
+  make run MODEL=pick_place_single FSM=pick_place_single.fsm
 
 Options:
   --headless   Run without a GUI (make run-headless); needs no display.
@@ -37,7 +37,7 @@ fi
 
 [ -d "$1" ] || die "workspace path does not exist: $1"
 WS="$(cd -- "$1" && pwd -P)"
-ENV_FILE="$WS/setup-grc.bash"
+ENV_FILE="$WS/setup-grc.${SHELL##*/}"
 MODELS_DIR="$WS/src/bdd_collab_bhv_cpp/models"
 
 [ -r "$ENV_FILE" ] || die "missing $ENV_FILE; run script-setup first"
@@ -55,4 +55,4 @@ set +u
 source "$ENV_FILE"
 set -u
 cd "$MODELS_DIR"
-exec make "$target" MODEL=pick_place FSM=pick_place.fsm
+exec make "$target" MODEL=pick_place_single FSM=pick_place_single.fsm
