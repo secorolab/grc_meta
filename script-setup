@@ -306,12 +306,20 @@ _grc_fail() {
     return 1
 }
 
+_grc_had_nounset=0
+[[ -o nounset ]] && _grc_had_nounset=1
+
+_grc_restore_nounset() {
+    [ "\$_grc_had_nounset" -eq 1 ] && set -u || set +u
+}
+
 _grc_source() {
     [ -r "\$1" ] || { _grc_fail "missing \$1"; return 1; }
     set +u
     # shellcheck disable=SC1090
-    . "\$1" 2>/dev/null
+    . "\$1"
     _grc_status=\$?
+    _grc_restore_nounset
     [ "\$_grc_status" -eq 0 ] || { _grc_fail "failed to source \$1"; return "\$_grc_status"; }
 }
 
@@ -330,8 +338,7 @@ unset COLCON_PREFIX_PATH AMENT_PREFIX_PATH
 
 if [ "\${ROS_DISTRO:-}" != "$(quote_path "$ROS_DISTRO")" ]; then
     printf 'sourcing %s\\n' "/opt/ros/$ROS_DISTRO/setup$shell_ext"
-    set +u
-    . "/opt/ros/$ROS_DISTRO/setup$shell_ext" 2>/dev/null || true
+    _grc_source "/opt/ros/$ROS_DISTRO/setup$shell_ext" || _grc_fail "ROS setup had issues: /opt/ros/$ROS_DISTRO/setup$shell_ext"
 fi
 
 if [ "\${VIRTUAL_ENV:-}" != "$(quote_path "$VENV")" ]; then
@@ -363,9 +370,9 @@ export INSTALL=$(quote_path "$WS/install")
 printf 'add to PATH: %s\\n' "$(quote_path "$BIN")"
 _grc_prepend_path "$(quote_path "$BIN")"
 
-unset -f _grc_fail _grc_source _grc_prepend_path
-set +u
 [ "\${GRC_SETUP_QUIET:-0}" = 1 ] || printf 'GRC environment ready: %s\\n' "$(quote_path "$WS")"
+unset -f _grc_fail _grc_source _grc_restore_nounset _grc_prepend_path
+unset _grc_had_nounset _grc_status
 EOF
 fi
 
