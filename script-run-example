@@ -6,11 +6,17 @@ usage() {
 Usage: script-run-example [--headless] <workspace-path>
 
 Runs the default pick-place example:
-  make run MODEL=pick_place_single FSM=pick_place_single.fsm
+  make run MODEL=pick_place_single
 
 Options:
   --headless   Run without a GUI (make run-headless); needs no display.
                Honors STEPS=<n> from the environment.
+
+Environment:
+  MODEL=<name>     Model to run (default: pick_place_single).
+  DIR=<path>       Generated artifact root passed to the models Makefile.
+  RUN_ID=<id>      Run identifier for the cataloged archive.
+  RUN_DIR=<path>   Run archive directory.
 USAGE
 }
 
@@ -37,11 +43,14 @@ fi
 
 [ -d "$1" ] || die "workspace path does not exist: $1"
 WS="$(cd -- "$1" && pwd -P)"
-ENV_FILE="$WS/setup-grc.${SHELL##*/}"
+RUN_SHELL="${SHELL:-/bin/bash}"
+ENV_FILE="$WS/setup-grc.${RUN_SHELL##*/}"
 MODELS_DIR="$WS/src/bdd_collab_bhv_cpp/models"
 
+[ -x "$RUN_SHELL" ] || die "run shell is not executable: $RUN_SHELL"
 [ -r "$ENV_FILE" ] || die "missing $ENV_FILE; run script-setup first"
 [ -d "$MODELS_DIR" ] || die "missing models directory: $MODELS_DIR"
+MODEL="${MODEL:-pick_place_single}"
 
 target="run"
 if [ "$HEADLESS" -eq 1 ]; then
@@ -50,9 +59,9 @@ elif [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     die "no GUI display detected; set DISPLAY/WAYLAND_DISPLAY, or pass --headless"
 fi
 
-# ROS 2 / colcon setup files reference unbound vars; source them with -u off.
-set +u
-source "$ENV_FILE"
-set -u
-cd "$MODELS_DIR"
-exec make "$target" MODEL=pick_place_single FSM=pick_place_single.fsm
+exec "$RUN_SHELL" -lc '
+set -e
+source "$1"
+cd "$2"
+exec make "$3" MODEL="$4"
+' _ "$ENV_FILE" "$MODELS_DIR" "$target" "$MODEL"

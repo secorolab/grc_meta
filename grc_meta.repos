@@ -23,6 +23,10 @@ repositories:
     type: git
     url: git@github.com:secorolab/motion-spec.git
     version: dev
+  rec:
+    type: git
+    url: git@github.com:secorolab/rec.git
+    version: main
   orocos_kinematics_dynamics:
     type: git
     url: git@github.com:secorolab/orocos_kinematics_dynamics.git

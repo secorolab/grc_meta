@@ -60,6 +60,12 @@ simulation and FSM without opening a window. It runs until the FSM reaches
 ws/src/grc_meta/script-run-example --headless ws
 ```
 
+The example uses `make run MODEL=pick_place_single`, so each run is cataloged
+through REC and written as a self-contained archive under
+`ws/src/bdd_collab_bhv_cpp/models/runs/<run-id>/`. Set `MODEL=<name>` to run a
+different model. Set `DIR=<path>`, `RUN_ID=<id>`, or `RUN_DIR=<path>` to control
+where generated artifacts and run archives are written.
+
 ### docker
 
 `script-docker` builds a dev image from the `Dockerfile` (a ROS 2 base with the

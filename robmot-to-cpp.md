@@ -1,9 +1,9 @@
 # .robmot to C++ Pipeline
 
-A `.robmot` model goes through five stages:
+A `.robmot` model goes through the same stages as the models Makefile:
 
 ```
-.robmot → JSON-LD → IR (ir.json) → C++ → cmake build → ./main
+.robmot → JSON-LD → IR (ir.json) → C++ + introspection contract → cmake build → REC-cataloged run archive
 ```
 
 The `Makefile` (in `bdd_collab_bhv_cpp/models/`) runs the whole chain.
@@ -28,6 +28,7 @@ Install to `/opt/mujoco-3.8.0` (or override later with `-DMUJOCO_ROOT=...`).
 uv venv && source .venv/bin/activate          # or python3 -m venv .venv
 
 uv pip install src/rdflib
+uv pip install --no-deps -e src/rec
 uv pip install --no-deps -e src/motion-spec-dsl
 uv pip install --no-deps -e src/motion-spec
 uv pip install --no-deps -e src/coord-dsl
@@ -76,16 +77,35 @@ workspace.
 ```bash
 cd bdd_collab_bhv_cpp/models
 
-make build MODEL=pick_place            # .robmot → executable
-make run MODEL=pick_place              # build + run with viewer
-make run-headless MODEL=pick_place     # build + run, no window
+make build MODEL=pick_place_single         # .robmot → executable + contract
+make run MODEL=pick_place_single           # build + REC-cataloged run with viewer
+make run-headless MODEL=pick_place_single  # build + REC-cataloged run, no window
 ```
 
-After the first build, iterate with:
+Cataloged runs are written to `runs/<RUN_ID>/` by default and contain the model,
+IR, generated contract, controller executable/source snapshot, REC lifecycle
+metadata, runtime RDF, and binary frame log:
+
+```
+manifest.json
+rec.json
+contract/schema.json
+contract/frame_layout.json
+controller/executable/main
+controller/source/...
+logs/frame_log.bin
+model/model.jsonld
+model/ir.json
+provenance/codegen.jsonld
+runtime/runtime.ttl
+```
+
+After the first build, use raw targets only for local debug runs that do not
+create a REC archive:
 
 ```bash
-make just-run MODEL=pick_place         # rebuild C++ only, run with viewer
-make jrh MODEL=pick_place              # rebuild C++ only, run headless
+make just-run MODEL=pick_place_single  # rebuild C++ only, run raw with viewer
+make jrh MODEL=pick_place_single       # rebuild C++ only, run raw headless
 ```
 
 ---
@@ -100,11 +120,12 @@ earlier ones it needs.
 | `check-deps` | Verify `textx` and `motion-spec-ir-gen` are on PATH |
 | `jsonld` | `.robmot` → JSON-LD |
 | `ir` | JSON-LD → `ir.json` |
-| `codegen` | `ir.json` → C++ headers + `CMakeLists.txt` |
+| `codegen` | `ir.json` → C++ headers, `CMakeLists.txt`, introspection contract, and codegen provenance |
 | `configure` | run `cmake` |
 | `build` | compile to `gen/<MODEL>/build/main` |
-| `run` / `run-headless` | execute the binary |
-| `just-run` / `jrh` | rebuild C++ only (no regen), then run |
+| `run` / `run-headless` | build and run through `motion_spec.introspection.runner`, producing a REC-cataloged archive |
+| `run-raw` / `run-headless-raw` | build and execute the generated binary directly, without archive creation |
+| `just-run` / `jrh` | rebuild C++ only (no regen), then run raw |
 | `clean` | delete `gen/<MODEL>/` |
 
 ## Makefile variables
@@ -112,10 +133,13 @@ earlier ones it needs.
 | Variable | Default | When to set |
 |---|---|---|
 | `MODEL` | — (required) | Pick the `.robmot` to build |
-| `INSTALL` | `$(CURDIR)/install` | **Almost always override** — point at your colcon `install/` |
+| `INSTALL` | — (required for build/run) | Point at your colcon `install/` |
+| `DIR` | `gen` | Root directory for generated artifacts |
+| `GEN` | `$(DIR)/$(MODEL)` | Full generated artifact directory |
+| `RUN_ID` | `<MODEL>-<UTC timestamp>` | Stable run identifier for the archive |
+| `RUN_DIR` | `runs/$(RUN_ID)` | Output directory for the REC-cataloged run archive |
+| `RUNNER` | `python -m motion_spec.introspection.runner` | Override only when invoking another installed runner |
 | `STEPS` | `45000` | Headless sim duration |
 | `JOBS` | `$(nproc)` | Parallel build jobs |
 | `STST` | `stst` | StringTemplate binary |
 | `OROCOS_DIR` | — | Custom orocos_kdl location |
-| `GEN` | `gen/$(MODEL)` | Output dir |
-| `ROOT` | `$(CURDIR)` | Only used to derive `INSTALL` if you don't set it |
