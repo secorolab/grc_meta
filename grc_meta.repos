@@ -26,7 +26,7 @@ repositories:
   rec:
     type: git
     url: git@github.com:secorolab/rec.git
-    version: main
+    version: dev
   orocos_kinematics_dynamics:
     type: git
     url: git@github.com:secorolab/orocos_kinematics_dynamics.git
