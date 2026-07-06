@@ -55,5 +55,5 @@ jobs:
         # (which won't advance STEPS) fails fast instead of hanging.
         timeout-minutes: 1
         run: |
-          ws/src/grc_meta/script-run-example --headless ws 2>&1 | tee run.log
+          GRC_WS=ws ws/src/grc_meta/script-run --headless pick_place_single 2>&1 | tee run.log
           grep -q '/S_DONE' run.log || { echo "::error::pick-place FSM did not reach S_DONE"; exit 1; }

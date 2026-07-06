@@ -47,24 +47,37 @@ Example — rebuild after pulling:
 ws/src/grc_meta/script-setup --build ws "$ros_distro"
 ```
 
-Run the default pick-place example with:
+Run a model with `script-run`. It reads the workspace from `$GRC_WS`, which the
+generated `setup-grc.<ext>` exports (along with `GRC_SCRIPT_SETUP` and
+`GRC_SCRIPT_RUN`), so once the env is sourced you can invoke it from anywhere:
+
 ```bash
-ws/src/grc_meta/script-run-example ws
+source ws/setup-grc.bash        # or .zsh
+script-run pick_place_single
+script-run admittance_arc_single
+"$GRC_SCRIPT_RUN" pick_place_single   # by exported path, from any directory
 ```
 
-To run it without a display (e.g. in CI), use `--headless`, which steps the
+Without a sourced env, set `GRC_WS` inline:
+
+```bash
+GRC_WS=ws ws/src/grc_meta/script-run pick_place_single
+```
+
+To run without a display (e.g. in CI), use `--headless`, which steps the
 simulation and FSM without opening a window. It runs until the FSM reaches
 `S_DONE`; `STEPS=<n>` (default 45000) is the safety cap on how long it waits:
 
 ```bash
-ws/src/grc_meta/script-run-example --headless ws
+GRC_WS=ws ws/src/grc_meta/script-run --headless pick_place_single
 ```
 
-The example uses `make run MODEL=pick_place_single`, so each run is cataloged
-through REC and written as a self-contained archive under
-`ws/src/bdd_collab_bhv_cpp/models/runs/<run-id>/`. Set `MODEL=<name>` to run a
-different model. Set `DIR=<path>`, `RUN_ID=<id>`, or `RUN_DIR=<path>` to control
-where generated artifacts and run archives are written.
+`script-run` runs `make run MODEL=<model>`, so each run is cataloged through REC
+and written as a self-contained archive under
+`ws/src/bdd_collab_bhv_cpp/models/runs/<run-id>/`. The model is a required
+positional argument. Set `DIR=<path>`,
+`RUN_ID=<id>`, or `RUN_DIR=<path>` to control where generated artifacts and run
+archives are written.
 
 ### docker
 
@@ -80,7 +93,7 @@ ws/src/grc_meta/script-docker            # build image + interactive shell
 
 # then inside the container:
 GRC_GIT_TRANSPORT=https /grc_meta/script-setup ws lyrical
-/grc_meta/script-run-example ws
+GRC_WS=ws /grc_meta/script-run
 ```
 
 ### workspace
