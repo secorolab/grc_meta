@@ -22,11 +22,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl-dev \
     libglfw3-dev \
     liborocos-kdl-dev \
+    libprotobuf-dev \
     liburdfdom-dev \
     liburdfdom-headers-dev \
     make \
     ninja-build \
     pkg-config \
+    protobuf-compiler \
     python3-pip \
     python3-venv \
     python3-colcon-common-extensions \
