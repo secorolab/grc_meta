@@ -48,6 +48,9 @@ jobs:
       - name: Run script-setup
         env:
           GRC_GIT_TRANSPORT: https
+          # Build without the Kinova Kortex hardware backend: the sim pipeline
+          # doesn't need it, and its auto-download hits a proprietary artifactory.
+          GRC_COLCON_META: ${{ github.workspace }}/ws/src/grc_meta/colcon.ci.meta
         run: ws/src/grc_meta/script-setup --clean ws "${{ inputs.ros_distro }}"
 
       - name: Install STST code-generation tool

@@ -104,7 +104,9 @@ fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPOS_FILE="$SCRIPT_DIR/grc_meta.repos"
-COLCON_META="$SCRIPT_DIR/colcon.meta"
+# GRC_COLCON_META overrides the colcon meta (e.g. CI builds without the Kinova
+# Kortex hardware backend, which needs a proprietary artifactory download).
+COLCON_META="${GRC_COLCON_META:-$SCRIPT_DIR/colcon.meta}"
 COLCON_DEFAULTS="$SCRIPT_DIR/colcon_defaults.yaml"
 
 [ -f "$REPOS_FILE" ] || die "missing $REPOS_FILE"

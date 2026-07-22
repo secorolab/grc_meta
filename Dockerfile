@@ -5,7 +5,9 @@
 ARG ROS_DISTRO=lyrical
 FROM ros:${ROS_DISTRO}
 
-# Workspace packages plus ant/java required by `motion-spec setup`.
+# Workspace packages plus ant/java required by `motion-spec setup`, and unzip
+# for robif2b's Kortex auto-download (default colcon.meta builds the hardware
+# backend; CI overrides that off via colcon.ci.meta).
 # Keep apt's package lists (no rm of /var/lib/apt/lists): script-setup's
 # `rosdep install` resolves and apt-installs a few more deps at runtime
 # (e.g. libcppunit-dev), which needs the lists present.
@@ -32,7 +34,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     python3-colcon-common-extensions \
     python3-rosdep \
-    python3-vcstool
+    python3-vcstool \
+    unzip
 
 # ros images already initialize rosdep; ensure it (no-op if present).
 RUN rosdep init 2>/dev/null || true

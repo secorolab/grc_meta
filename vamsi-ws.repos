@@ -1,0 +1,113 @@
+repositories:
+  BehaviorTree.CPP:
+    type: git
+    url: https://github.com/BehaviorTree/BehaviorTree.CPP.git
+    version: master
+  bdd-dsl:
+    type: git
+    url: https://github.com/minhnh/bdd-dsl.git
+    version: main
+  bdd_collab_bhv_cpp:
+    type: git
+    url: git@github.com:secorolab/bdd_collab_bhv_cpp.git
+    version: feat/motion-spec
+  bdd_ros2_interfaces:
+    type: git
+    url: git@github.com:secorolab/bdd_ros2_interfaces.git
+    version: main
+  comp-rob2b/kindyngen:
+    type: git
+    url: https://github.com/comp-rob2b/kindyngen
+    version: main
+  comp-rob2b/metamodels:
+    type: git
+    url: https://github.com/comp-rob2b/metamodels.git
+    version: main
+  comp-rob2b/robot-models:
+    type: git
+    url: https://github.com/comp-rob2b/robot-models
+    version: main
+  coord-dsl:
+    type: git
+    url: git@github.com:secorolab/coord-dsl.git
+    version: feature/bt
+  coord2b:
+    type: git
+    url: git@github.com:rosym-project/coord2b.git
+    version: master
+  eddie_base:
+    type: git
+    url: git@github.com:secorolab/eddie_base.git
+    version: main
+  grc_meta:
+    type: git
+    url: git@github.com:secorolab/grc_meta.git
+    version: main
+  hddc2b:
+    type: git
+    url: git@github.com:secorolab/hddc2b.git
+    version: pst-vel-dist
+  kdl_parser:
+    type: git
+    url: git@github.com:secorolab/kdl_parser.git
+    version: main
+  metamodels:
+    type: git
+    url: git@github.com:secorolab/metamodels.git
+    version: add-motion-spec-metamodels
+  mj_kdl_wrapper:
+    type: git
+    url: git@github.com:vamsikalagaturu/mj_kdl_wrapper.git
+    version: agent/dual-arm-runtime
+  models:
+    type: git
+    url: git@github.com:secorolab/models.git
+    version: main
+  motion-spec:
+    type: git
+    url: git@github.com:secorolab/motion-spec.git
+    version: dev
+  motion-spec-dsl:
+    type: git
+    url: git@github.com:secorolab/motion-spec-dsl.git
+    version: dev
+  motion-spec-dsl-nvim:
+    type: git
+    url: git@github.com:vamsikalagaturu/motion-spec-dsl-nvim.git
+    version: master
+  orocos_kinematics_dynamics:
+    type: git
+    url: git@github.com:secorolab/orocos_kinematics_dynamics.git
+    version: feature/achd_fixed_joint
+  rdf-utils:
+    type: git
+    url: git@github.com:secorolab/rdf-utils.git
+    version: agent/rdf-uri-helpers
+  rdflib:
+    type: git
+    url: git@github.com:secorolab/rdflib.git
+    version: 7.6.0-fix-multi-type-scoped-context
+  rec:
+    type: git
+    url: git@github.com:secorolab/rec.git
+    version: dev
+  robif2b:
+    type: git
+    url: git@github.com:secorolab/robif2b.git
+    version: dev
+  robotiq_driver_noros:
+    type: git
+    url: git@github.com:secorolab/robotiq_driver_noros.git
+    version: main
+  robotiq_ft:
+    type: git
+    url: git@github.com:secorolab/robotiq_ft.git
+    version: main
+  scene-dsl:
+    type: git
+    url: git@github.com:secorolab/scene-dsl.git
+    version: kgraph
+  serial:
+    type: git
+    url: git@github.com:secorolab/serial.git
+    version: noros
