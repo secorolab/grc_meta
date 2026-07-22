@@ -252,7 +252,8 @@ if [ "$MODE" = "full" ]; then
     log "Installing Python dependencies and workspace packages"
     # empy pinned to 3.3.4: ROS 2's rosidl .em template generators break on empy 4.x.
     # pyparsing is rdflib's core dep; packaging/prettytable/html5rdf are pyshacl's
-    # (both rdflib and pyshacl install --no-deps below).
+    # (both rdflib and pyshacl install --no-deps below). scipy backs
+    # rdf_utils.models.geometry (undeclared there, pulled in via scene-dsl).
     run python -m pip install \
         "empy==3.3.4" \
         "textX[cli]>=4.1.0" \
@@ -260,6 +261,7 @@ if [ "$MODE" = "full" ]; then
         jinja2 \
         platformdirs \
         numpy \
+        scipy \
         protobuf \
         pyparsing \
         packaging \
