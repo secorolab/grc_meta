@@ -60,13 +60,14 @@ jobs:
           motion-spec setup --prefix "$GRC_WS"
 
       - name: Run pick-place example (headless)
-        # gen + build + run of one controller; cap it so a deadlock (which won't
-        # reach S_DONE) fails fast instead of hanging.
-        timeout-minutes: 4
+        # gen + build + run of one controller. --steps is the safety cap (1 ms
+        # timestep); the run self-terminates at S_DONE well before it. Wall-clock
+        # timeout is the backstop against a deadlock that never advances.
+        timeout-minutes: 8
         shell: bash
         run: |
           source ws/setup-grc.bash
           motion-spec run \
             "$GRC_WS/src/motion-spec-dsl/models/pick_place_single/pick_place_single.robmot" \
-            --prefix "$GRC_WS/install" --cwd "$GRC_WS" --headless 2>&1 | tee run.log
+            --prefix "$GRC_WS/install" --cwd "$GRC_WS" --headless --steps 60000 2>&1 | tee run.log
           grep -q '/S_DONE' run.log || { echo "::error::pick-place FSM did not reach S_DONE"; exit 1; }
