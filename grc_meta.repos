@@ -39,6 +39,10 @@ repositories:
     type: git
     url: git@github.com:secorolab/scene-dsl.git
     version: main
+  bdd-dsl:
+    type: git
+    url: git@github.com:minhnh/bdd-dsl.git
+    version: main
   mj_kdl_wrapper:
     type: git
     url: git@github.com:vamsikalagaturu/mj_kdl_wrapper.git
