@@ -12,7 +12,8 @@ grc_meta checkout is mounted read-only at /grc_meta. With no command an
 interactive shell is started; inside, run:
 
   GRC_GIT_TRANSPORT=https /grc_meta/script-setup ws lyrical
-  GRC_WS=ws /grc_meta/script-run pick_place_single
+  source ws/setup-grc.bash
+  motion-spec setup --prefix "$GRC_WS"
 
 Options:
   --build   Rebuild the image even if it already exists.

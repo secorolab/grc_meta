@@ -25,16 +25,15 @@ The setup script requires an existing ROS 2 distro at `/opt/ros/$ros_distro`.
 It checks for the required non-ROS system packages and, if any are missing,
 prints the `apt-get install` line and exits so you can install them (the only
 step needing sudo) and rerun. It then imports the workspace repositories,
-creates `.venv`, installs the Python workspace packages, builds STSTv4 (pinned,
-run against StringTemplate 4.3.4), runs `colcon build`, and writes
+creates `.venv`, installs the Python workspace packages, runs `colcon build`, and writes
 `ws/setup-grc.<ext>` (`.zsh` when `$SHELL` is zsh, `.bash` otherwise).
 
 **Modes:**
 
 | Flag | What it does |
 |------|-------------|
-| *(none)* | Full setup: import, fast-forward, rosdep, venv, stst, build, verify |
-| `--ff` | Fast-forward repos and submodules only (skip rosdep/venv/stst/build) |
+| *(none)* | Full setup: import, fast-forward, rosdep, venv, and build |
+| `--ff` | Fast-forward repos and submodules only (skip rosdep/venv/build) |
 | `--build` | Rebuild only (skip import/ff/submodules — assumes already set up) |
 
 Example — fast-forward existing repos without rebuilding:
@@ -47,37 +46,25 @@ Example — rebuild after pulling:
 ws/src/grc_meta/script-setup --build ws "$ros_distro"
 ```
 
-Run a model with `script-run`. It reads the workspace from `$GRC_WS`, which the
-generated `setup-grc.<ext>` exports (along with `GRC_SCRIPT_SETUP` and
-`GRC_SCRIPT_RUN`), so once the env is sourced you can invoke it from anywhere:
+Source the generated environment, install STST through the motion-spec CLI, and
+check the target dependencies:
 
 ```bash
-source ws/setup-grc.bash        # or .zsh
-script-run pick_place_single
-script-run admittance_arc_single
-"$GRC_SCRIPT_RUN" pick_place_single   # by exported path, from any directory
+source ws/setup-grc.bash          # or .zsh
+motion-spec setup --prefix "$GRC_WS"
+motion-spec health --target mujoco
 ```
 
-Without a sourced env, set `GRC_WS` inline:
+Run a model directly through the CLI. Each invocation creates a uniquely named
+generation with its build and recorded runs:
 
 ```bash
-GRC_WS=ws ws/src/grc_meta/script-run pick_place_single
+cd "$GRC_WS/src/motion-spec"
+motion-spec run \
+  "$GRC_WS/src/motion-spec-dsl/models/pick_place_single/pick_place_single.robmot" \
+  --prefix "$GRC_WS/install" \
+  --headless
 ```
-
-To run without a display (e.g. in CI), use `--headless`, which steps the
-simulation and FSM without opening a window. It runs until the FSM reaches
-`S_DONE`; `STEPS=<n>` (default 45000) is the safety cap on how long it waits:
-
-```bash
-GRC_WS=ws ws/src/grc_meta/script-run --headless pick_place_single
-```
-
-`script-run` runs `make run MODEL=<model>`, so each run is cataloged through REC
-and written as a self-contained archive under
-`ws/src/bdd_collab_bhv_cpp/models/runs/<run-id>/`. The model is a required
-positional argument. Set `DIR=<path>`,
-`RUN_ID=<id>`, or `RUN_DIR=<path>` to control where generated artifacts and run
-archives are written.
 
 ### docker
 
@@ -93,7 +80,9 @@ ws/src/grc_meta/script-docker            # build image + interactive shell
 
 # then inside the container:
 GRC_GIT_TRANSPORT=https /grc_meta/script-setup ws lyrical
-GRC_WS=ws /grc_meta/script-run
+source ws/setup-grc.bash
+motion-spec setup --prefix "$GRC_WS"
+motion-spec health --target mujoco
 ```
 
 ### workspace

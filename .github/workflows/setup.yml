@@ -11,7 +11,7 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     # Overall backstop so a hung build/run can't burn CI minutes indefinitely.
-    timeout-minutes: 10
+    timeout-minutes: 20
     # The ROS image fixes the Ubuntu base: jazzy -> 24.04, lyrical -> 26.04.
     container:
       image: ros:${{ inputs.ros_distro }}
@@ -20,11 +20,11 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            ant build-essential ca-certificates cmake curl default-jre git \
+            ant build-essential ca-certificates cmake default-jre git \
             libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev \
-            liburdfdom-dev liburdfdom-headers-dev make ninja-build pkg-config \
-            python3-pip python3-venv python3-colcon-common-extensions \
-            python3-rosdep python3-vcstool unzip
+            libprotobuf-dev liburdfdom-dev liburdfdom-headers-dev make ninja-build \
+            pkg-config protobuf-compiler python3-pip python3-venv \
+            python3-colcon-common-extensions python3-rosdep python3-vcstool
 
       - name: Checkout grc_meta
         uses: actions/checkout@v4
@@ -50,10 +50,20 @@ jobs:
           GRC_GIT_TRANSPORT: https
         run: ws/src/grc_meta/script-setup --clean ws "${{ inputs.ros_distro }}"
 
-      - name: Run pick-place example (headless)
-        # Pick-place finishes in well under a minute; cap it so a deadlock
-        # (which won't advance STEPS) fails fast instead of hanging.
-        timeout-minutes: 1
+      - name: Install STST code-generation tool
+        shell: bash
         run: |
-          GRC_WS=ws ws/src/grc_meta/script-run --headless pick_place_single 2>&1 | tee run.log
+          source ws/setup-grc.bash
+          motion-spec setup --prefix "$GRC_WS"
+
+      - name: Run pick-place example (headless)
+        # gen + build + run of one controller; cap it so a deadlock (which won't
+        # reach S_DONE) fails fast instead of hanging.
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          source ws/setup-grc.bash
+          motion-spec run \
+            "$GRC_WS/src/motion-spec-dsl/models/pick_place_single/pick_place_single.robmot" \
+            --prefix "$GRC_WS/install" --cwd "$GRC_WS" --headless 2>&1 | tee run.log
           grep -q '/S_DONE' run.log || { echo "::error::pick-place FSM did not reach S_DONE"; exit 1; }

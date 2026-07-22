@@ -5,7 +5,7 @@
 ARG ROS_DISTRO=lyrical
 FROM ros:${ROS_DISTRO}
 
-# The same package list script-setup checks for. Already-present ones are no-ops.
+# Workspace packages plus ant/java required by `motion-spec setup`.
 # Keep apt's package lists (no rm of /var/lib/apt/lists): script-setup's
 # `rosdep install` resolves and apt-installs a few more deps at runtime
 # (e.g. libcppunit-dev), which needs the lists present.
@@ -14,7 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
     cmake \
-    curl \
     default-jre \
     git \
     libegl-dev \
@@ -33,8 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     python3-colcon-common-extensions \
     python3-rosdep \
-    python3-vcstool \
-    unzip
+    python3-vcstool
 
 # ros images already initialize rosdep; ensure it (no-op if present).
 RUN rosdep init 2>/dev/null || true

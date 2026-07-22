@@ -2,11 +2,11 @@ repositories:
   metamodels:
     type: git
     url: git@github.com:secorolab/metamodels.git
-    version: feat/motion-spec-dsl
+    version: main
   bdd_collab_bhv_cpp:
     type: git
     url: git@github.com:secorolab/bdd_collab_bhv_cpp.git
-    version: feat/motion-spec
+    version: rolling
   bdd_ros2_interfaces:
     type: git
     url: git@github.com:secorolab/bdd_ros2_interfaces.git
@@ -14,7 +14,7 @@ repositories:
   coord-dsl:
     type: git
     url: git@github.com:secorolab/coord-dsl.git
-    version: main
+    version: feature/bt
   coord2b:
     type: git
     url: git@github.com:rosym-project/coord2b.git
@@ -35,10 +35,14 @@ repositories:
     type: git
     url: git@github.com:secorolab/motion-spec-dsl.git
     version: dev
+  scene-dsl:
+    type: git
+    url: git@github.com:secorolab/scene-dsl.git
+    version: main
   mj_kdl_wrapper:
     type: git
     url: git@github.com:vamsikalagaturu/mj_kdl_wrapper.git
-    version: v0.2.2
+    version: v0.2.3
   rdf-utils:
     type: git
     url: git@github.com:secorolab/rdf-utils.git

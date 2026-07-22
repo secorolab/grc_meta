@@ -14,8 +14,7 @@ usage() {
     cat <<'USAGE'
 Usage: script-setup [--clean] [--ff|--build] <workspace-path> <ros-distro>
 
-Creates and builds a ROS 2 workspace that can run:
-  make run MODEL=pick_place_single
+Creates and builds a ROS 2 workspace.
 
 Modes (default: full setup & build):
   --ff      Fast-forward repos and submodules only (skip build).
@@ -26,7 +25,6 @@ Options:
 
 Environment variables:
   GRC_GIT_TRANSPORT=ssh|https   Repository URL mode for grc_meta.repos.
-  STST_REF=<git-ref>            STSTv4 revision to checkout.
   VERBOSE=1                     Print command traces for debugging.
   GRC_SETUP_QUIET=1             Suppress the final line in the generated env file.
 USAGE
@@ -114,8 +112,6 @@ COLCON_DEFAULTS="$SCRIPT_DIR/colcon_defaults.yaml"
 [ -f "$COLCON_DEFAULTS" ] || die "missing $COLCON_DEFAULTS"
 
 GRC_GIT_TRANSPORT="${GRC_GIT_TRANSPORT:-ssh}"
-STST_REPO="${STST_REPO:-https://github.com/jsnyders/STSTv4.git}"
-STST_REF="${STST_REF:-e6152907c7f82aba7685c4f2630490968ffd6594}"
 ROS_DISTRO="$2"
 
 [ -n "$ROS_DISTRO" ] || die "ros-distro argument is empty"
@@ -131,7 +127,6 @@ mkdir -p "$1"
 WS="$(cd -- "$1" && pwd -P)"
 SRC="$WS/src"
 BIN="$WS/bin"
-THIRD_PARTY="$WS/third_party"
 VENV="$WS/.venv"
 ENV_FILE="$WS/setup-grc${shell_ext}"
 GENERATED_REPOS="$WS/.grc_meta.repos"
@@ -143,12 +138,12 @@ fi
 
 log "Checking required system packages"
 require_command dpkg-query
-REQUIRED_PKGS="ant build-essential ca-certificates cmake curl default-jre git
+REQUIRED_PKGS="build-essential ca-certificates cmake git
 libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev
 libprotobuf-dev liburdfdom-dev liburdfdom-headers-dev make ninja-build
 pkg-config protobuf-compiler
 python3-pip python3-venv python3-colcon-common-extensions python3-rosdep
-python3-vcstool unzip"
+python3-vcstool"
 printf "${YELLOW}+ dpkg-query -W -f='\${Status}' %s${NC}\n" $(echo $REQUIRED_PKGS) >&5
 missing=""
 for pkg in $REQUIRED_PKGS; do
@@ -171,13 +166,11 @@ require_command rosdep
 require_command colcon
 require_command python3
 require_command git
-require_command ant
-require_command curl
 
 if [ "$MODE" != "build" ]; then
     if [ ! -f "$WS/colcon.meta" ]; then
         log "Preparing workspace at $WS"
-        run mkdir -p "$SRC" "$BIN" "$THIRD_PARTY"
+        run mkdir -p "$SRC" "$BIN"
         run cp "$COLCON_META" "$WS/colcon.meta"
         run cp "$COLCON_DEFAULTS" "$WS/colcon_defaults.yaml"
     fi
@@ -281,37 +274,9 @@ if [ "$MODE" = "full" ]; then
     run python -m pip install --no-deps -e "$SRC/rec"
     run python -m pip install --no-deps -e "$SRC/motion-spec"
     run python -m pip install --no-deps -e "$SRC/motion-spec-dsl"
+    run python -m pip install --no-deps -e "$SRC/scene-dsl"
     run python -m pip install --no-deps -e "$SRC/coord-dsl"
     run python -m pip install --no-deps -e "$SRC/rdf-utils"
-
-    if ! command -v stst >/dev/null 2>&1; then
-        log "Building STSTv4"
-        if [ ! -d "$THIRD_PARTY/STSTv4/.git" ]; then
-            run git clone "$STST_REPO" "$THIRD_PARTY/STSTv4"
-        fi
-        run git -C "$THIRD_PARTY/STSTv4" fetch --tags origin
-        run git -C "$THIRD_PARTY/STSTv4" checkout "$STST_REF"
-        run ant -f "$THIRD_PARTY/STSTv4/build.xml"
-
-        # STSTv4 bundles StringTemplate 4.0.8, but the motion-spec code-generator
-        # templates require StringTemplate 4.3.4. Fetch ST4 4.3.4 and its antlr runtime
-        # from Maven Central and run stst against those instead of the bundled 4.0.8.
-        ST4_JAR="$THIRD_PARTY/STSTv4/lib/ST4-4.3.4.jar"
-        ANTLR_RT_JAR="$THIRD_PARTY/STSTv4/lib/antlr-runtime-3.5.3.jar"
-        [ -f "$ST4_JAR" ] || run curl -fsSL -o "$ST4_JAR" \
-            "https://repo1.maven.org/maven2/org/antlr/ST4/4.3.4/ST4-4.3.4.jar"
-        [ -f "$ANTLR_RT_JAR" ] || run curl -fsSL -o "$ANTLR_RT_JAR" \
-            "https://repo1.maven.org/maven2/org/antlr/antlr-runtime/3.5.3/antlr-runtime-3.5.3.jar"
-
-        cat > "$BIN/stst" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-STST_HOME=$(quote_path "$THIRD_PARTY/STSTv4")
-CP="\$STST_HOME/build/jar/stst.jar:\$STST_HOME/lib/ST4-4.3.4.jar:\$STST_HOME/lib/antlr-runtime-3.5.3.jar"
-exec java -cp "\$CP" jjs.stst.STStandaloneTool "\$@"
-EOF
-        chmod +x "$BIN/stst"
-    fi
 fi
 
 if [ "$MODE" != "ff" ]; then
@@ -393,8 +358,6 @@ printf 'export GRC_WS=%s\\n' "$(quote_path "$WS")"
 export GRC_WS=$(quote_path "$WS")
 printf 'export GRC_SCRIPT_SETUP=%s\\n' "$(quote_path "$SCRIPT_DIR/script-setup")"
 export GRC_SCRIPT_SETUP=$(quote_path "$SCRIPT_DIR/script-setup")
-printf 'export GRC_SCRIPT_RUN=%s\\n' "$(quote_path "$SCRIPT_DIR/script-run")"
-export GRC_SCRIPT_RUN=$(quote_path "$SCRIPT_DIR/script-run")
 printf 'add to PATH: %s\\n' "$(quote_path "$BIN")"
 _grc_prepend_path "$(quote_path "$BIN")"
 
@@ -405,17 +368,9 @@ EOF
 fi
 
 if [ "$MODE" != "ff" ]; then
-    # Codegen output trees (models Makefile gen/, motion-spec generated/, run archives)
-    # each contain a CMake project named motion_spec_mj_kdl_target. colcon crawls into
-    # them under --base-paths and aborts on the duplicate name before package selection,
-    # so --packages-ignore can't help. Drop a COLCON_IGNORE marker at each output root
-    # (matching the repos' own .gitignore) so discovery never descends into generated code.
+    # Generated controllers are CMake projects, not colcon packages.
     log "Marking generated artifact trees COLCON_IGNORE"
-    for d in \
-        "$SRC/motion-spec/generated" \
-        "$SRC/motion-spec/runs" \
-        "$SRC/bdd_collab_bhv_cpp/models/gen" \
-        "$SRC/bdd_collab_bhv_cpp/models/runs"; do
+    for d in "$SRC/motion-spec/generation"; do
         [ -d "$d" ] && run touch "$d/COLCON_IGNORE"
     done
 
@@ -423,12 +378,10 @@ if [ "$MODE" != "ff" ]; then
     cd "$WS"
     run colcon build --base-paths "${IMPORTED_DIRS[@]}" --metas colcon.meta
 
-    log "Verifying pick-place pipeline dependencies"
-    source_env "$ENV_FILE"
-    cd "$SRC/bdd_collab_bhv_cpp/models"
-    run make check-deps MODEL=pick_place_single
 fi
 
 log "Setup complete"
 printf "${GREEN}Source this environment in new shells:${NC}\n"
 printf "  ${CYAN}source %s${NC}\n" "$(quote_path "$ENV_FILE")"
+printf "  ${CYAN}motion-spec setup --prefix %s${NC}\n" "$(quote_path "$WS")"
+printf "  ${CYAN}motion-spec health --target mujoco${NC}\n"
