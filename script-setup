@@ -369,9 +369,14 @@ EOF
 fi
 
 if [ "$MODE" != "ff" ]; then
-    # Generated controllers are CMake projects, not colcon packages.
-    log "Marking generated artifact trees COLCON_IGNORE"
-    for d in "$SRC/motion-spec/generation"; do
+    # Example/demo/generation CMake trees are not workspace packages: they build
+    # generated sources or pull in non-workspace deps (e.g. BehaviorTree.CPP), so
+    # colcon must not descend into them.
+    log "Marking example and generated artifact trees COLCON_IGNORE"
+    for d in \
+        "$SRC/motion-spec/generations" \
+        "$SRC/motion-spec/code-generator" \
+        "$SRC/coord-dsl/examples"; do
         [ -d "$d" ] && run touch "$d/COLCON_IGNORE"
     done
 
