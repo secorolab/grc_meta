@@ -36,7 +36,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-colcon-common-extensions \
     python3-rosdep \
     python3-vcstool \
-    unzip
+    unzip \
+    ros-${ROS_DISTRO}-rclcpp \
+    ros-${ROS_DISTRO}-realtime-tools
 
 # ros images already initialize rosdep; ensure it (no-op if present).
 RUN rosdep init 2>/dev/null || true

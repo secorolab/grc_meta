@@ -145,7 +145,8 @@ libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev
 libprotobuf-dev libtomlplusplus-dev liburdfdom-dev liburdfdom-headers-dev make ninja-build
 pkg-config protobuf-compiler
 python3-pip python3-venv python3-colcon-common-extensions python3-rosdep
-python3-vcstool"
+python3-vcstool
+ros-$ROS_DISTRO-rclcpp ros-$ROS_DISTRO-realtime-tools"
 printf "${YELLOW}+ dpkg-query -W -f='\${Status}' %s${NC}\n" $(echo $REQUIRED_PKGS) >&5
 missing=""
 for pkg in $REQUIRED_PKGS; do

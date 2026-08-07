@@ -25,7 +25,8 @@ jobs:
             libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev \
             libprotobuf-dev libtomlplusplus-dev liburdfdom-dev liburdfdom-headers-dev make ninja-build \
             pkg-config protobuf-compiler python3-pip python3-venv \
-            python3-colcon-common-extensions python3-rosdep python3-vcstool
+            python3-colcon-common-extensions python3-rosdep python3-vcstool \
+            ros-${{ inputs.ros_distro }}-rclcpp ros-${{ inputs.ros_distro }}-realtime-tools
 
       - name: Checkout grc_meta
         uses: actions/checkout@v4
