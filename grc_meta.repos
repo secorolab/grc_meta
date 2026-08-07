@@ -2,7 +2,7 @@ repositories:
   metamodels:
     type: git
     url: git@github.com:secorolab/metamodels.git
-    version: main
+    version: agent/path-progress-metamodel
   bdd_collab_bhv_cpp:
     type: git
     url: git@github.com:secorolab/bdd_collab_bhv_cpp.git
@@ -14,7 +14,7 @@ repositories:
   coord-dsl:
     type: git
     url: git@github.com:secorolab/coord-dsl.git
-    version: feature/bt
+    version: main
   coord2b:
     type: git
     url: git@github.com:rosym-project/coord2b.git
