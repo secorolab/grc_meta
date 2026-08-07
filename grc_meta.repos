@@ -49,7 +49,7 @@ repositories:
     version: v0.3.1
   rdf-utils:
     type: git
-    url: git@github.com:secorolab/rdf-utils.git
+    url: git@github.com:minhnh/rdf-utils.git
     version: main
   rdflib:
     type: git
