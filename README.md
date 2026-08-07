@@ -108,3 +108,13 @@ cp src/grc_meta/colcon_defaults.yaml .
 cd ~/ws
 colcon build
 ```
+
+## known issues
+
+- **admittance_arc_single fails to build on Lyrical.** Its ROS-publish monitor
+  (`also publish to topic ...`) generates code against `realtime_tools`'
+  deprecated `RealtimePublisher` API (`trylock()` / `msg_` / `unlockAndPublish()`),
+  which Lyrical's newer `realtime_tools` removed. Jazzy still has it (deprecated)
+  so Jazzy CI passes. Fix: update motion-spec's codegen template
+  (`src/motion_spec/templates/assembly_loop.stg`, `domain_monitors.stg`) to emit
+  `try_publish(msg)` instead — supported on both distros, not a compat shim.
