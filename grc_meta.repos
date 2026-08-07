@@ -2,7 +2,7 @@ repositories:
   metamodels:
     type: git
     url: git@github.com:secorolab/metamodels.git
-    version: agent/path-progress-metamodel
+    version: main
   bdd_collab_bhv_cpp:
     type: git
     url: git@github.com:secorolab/bdd_collab_bhv_cpp.git
