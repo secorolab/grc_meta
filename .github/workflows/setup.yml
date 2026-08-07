@@ -11,7 +11,8 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     # Overall backstop so a hung build/run can't burn CI minutes indefinitely.
-    timeout-minutes: 20
+    # Setup/build plus three per-step timeouts (8 + 8 + 5) can add up to ~35 min worst case.
+    timeout-minutes: 40
     # The ROS image fixes the Ubuntu base: jazzy -> 24.04, lyrical -> 26.04.
     container:
       image: ros:${{ inputs.ros_distro }}
@@ -71,3 +72,26 @@ jobs:
             "$GRC_WS/src/motion-spec-dsl/models/pick_place_single/pick_place_single.robmot" \
             --prefix "$GRC_WS/install" --cwd "$GRC_WS" --headless --steps 60000 2>&1 | tee run.log
           grep -q '/S_DONE' run.log || { echo "::error::pick-place FSM did not reach S_DONE"; exit 1; }
+
+      - name: Run admittance-arc example (headless)
+        # Same pattern as pick-place; completes in ~24k steps, 60000 keeps the
+        # same safety margin.
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          source ws/setup-grc.bash
+          motion-spec run \
+            "$GRC_WS/src/motion-spec-dsl/models/admittance_arc_single/admittance_arc_single.robmot" \
+            --prefix "$GRC_WS/install" --cwd "$GRC_WS" --headless --steps 60000 2>&1 | tee run.log
+          grep -q '/S_DONE' run.log || { echo "::error::admittance-arc FSM did not reach S_DONE"; exit 1; }
+
+      - name: Build real_demo_monitor (gen+build only)
+        # Targets real hardware (Kinova/Robotiq), so it can't run headlessly in
+        # CI; verify codegen and compilation only.
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          source ws/setup-grc.bash
+          cd "$GRC_WS/src/motion-spec-dsl/models/real_demo_monitor"
+          gen_dir="$(motion-spec gen code real_demo_monitor.robmot -o ci_build | tail -1)"
+          motion-spec build "$gen_dir" --prefix "$GRC_WS/install"
