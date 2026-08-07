@@ -142,7 +142,7 @@ log "Checking required system packages"
 require_command dpkg-query
 REQUIRED_PKGS="build-essential ca-certificates cmake git
 libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev
-libprotobuf-dev liburdfdom-dev liburdfdom-headers-dev make ninja-build
+libprotobuf-dev libtomlplusplus-dev liburdfdom-dev liburdfdom-headers-dev make ninja-build
 pkg-config protobuf-compiler
 python3-pip python3-venv python3-colcon-common-extensions python3-rosdep
 python3-vcstool"

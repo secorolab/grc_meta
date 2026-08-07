@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglfw3-dev \
     liborocos-kdl-dev \
     libprotobuf-dev \
+    libtomlplusplus-dev \
     liburdfdom-dev \
     liburdfdom-headers-dev \
     make \
