@@ -330,10 +330,13 @@ _grc_saved_colcon="\${COLCON_PREFIX_PATH:-}"
 _grc_saved_ament="\${AMENT_PREFIX_PATH:-}"
 unset COLCON_PREFIX_PATH AMENT_PREFIX_PATH
 
-if [ "\${ROS_DISTRO:-}" != "$(quote_path "$ROS_DISTRO")" ]; then
-    printf 'sourcing %s\\n' "/opt/ros/$ROS_DISTRO/setup$shell_ext"
-    _grc_source "/opt/ros/$ROS_DISTRO/setup$shell_ext" || _grc_fail "ROS setup had issues: /opt/ros/$ROS_DISTRO/setup$shell_ext"
-fi
+# Always source, even if \$ROS_DISTRO already matches: that var is baked into the
+# ros:* Docker images at the image level, so it reads as "already sourced" in a
+# fresh \`docker exec\` shell that never actually ran setup.bash (PATH/AMENT_PREFIX_PATH
+# are unset). Re-sourcing an already-sourced setup.bash is idempotent, so there's no
+# downside to dropping the guard.
+printf 'sourcing %s\\n' "/opt/ros/$ROS_DISTRO/setup$shell_ext"
+_grc_source "/opt/ros/$ROS_DISTRO/setup$shell_ext" || _grc_fail "ROS setup had issues: /opt/ros/$ROS_DISTRO/setup$shell_ext"
 
 if [ "\${VIRTUAL_ENV:-}" != "$(quote_path "$VENV")" ]; then
     printf 'sourcing %s\\n' "$(quote_path "$VENV/bin/activate")"

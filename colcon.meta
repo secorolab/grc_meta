@@ -5,8 +5,10 @@
                 "-DENABLE_ETHERCAT=OFF",
                 "-DENABLE_KELO=OFF",
                 "-DENABLE_KORTEX=ON",
-                "-DCMAKE_BUILD_TYPE=Debug",
-                "-DENABLE_KORTEX_API_AUTO_DOWNLOAD=ON"
+                "-DENABLE_KORTEX_API_AUTO_DOWNLOAD=ON",
+                "-DENABLE_ROBOTIQ_FT=ON",
+                "-DENABLE_ROBOTIQ_GRIPPER=ON",
+                "-DCMAKE_BUILD_TYPE=Debug"
             ]
         },
         "mj_kdl_wrapper": {
