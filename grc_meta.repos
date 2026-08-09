@@ -11,6 +11,10 @@ repositories:
     type: git
     url: git@github.com:secorolab/bdd_ros2_interfaces.git
     version: main
+  aruco_perception:
+    type: git
+    url: git@github.com:secorolab/aruco_perception.git
+    version: main
   coord-dsl:
     type: git
     url: git@github.com:secorolab/coord-dsl.git
