@@ -416,8 +416,15 @@ if [ "$MODE" != "ff" ]; then
 
 fi
 
+if [ "$MODE" != "ff" ]; then
+    # STST is the StringTemplate runner every code-generating model needs; without it the
+    # first `motion-spec run` dies at codegen with 'stst was not found'. It needs the venv on
+    # PATH, so it runs here rather than being left as a step to remember.
+    log "Installing the STST code generator"
+    run motion-spec setup --prefix "$WS"
+fi
+
 log "Setup complete"
 printf "${GREEN}Source this environment in new shells:${NC}\n"
 printf "  ${CYAN}source %s${NC}\n" "$(quote_path "$ENV_FILE")"
-printf "  ${CYAN}motion-spec setup --prefix %s${NC}\n" "$(quote_path "$WS")"
 printf "  ${CYAN}motion-spec health --target mujoco${NC}\n"

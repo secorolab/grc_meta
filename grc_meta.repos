@@ -6,7 +6,7 @@ repositories:
   bdd_collab_bhv_cpp:
     type: git
     url: git@github.com:secorolab/bdd_collab_bhv_cpp.git
-    version: rolling
+    version: demo
   bdd_ros2_interfaces:
     type: git
     url: git@github.com:secorolab/bdd_ros2_interfaces.git

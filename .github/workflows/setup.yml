@@ -61,12 +61,6 @@ jobs:
           GRC_COLCON_META: ${{ github.workspace }}/ws/src/grc_meta/colcon.ci.meta
         run: ws/src/grc_meta/script-setup --clean ws "${{ inputs.ros_distro }}"
 
-      - name: Install STST code-generation tool
-        shell: bash
-        run: |
-          source ws/setup-grc.bash
-          motion-spec setup --prefix "$GRC_WS"
-
       - name: Run pick-place example (headless)
         # gen + build + run of one controller. --steps is the safety cap (1 ms
         # timestep); the run self-terminates at S_DONE well before it. Wall-clock
