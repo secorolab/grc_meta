@@ -20,6 +20,8 @@ Options:
 
 Environment:
   ROS_DISTRO   Base ROS 2 distro / image tag (default: lyrical).
+  GRC_GPU      auto|nvidia|dri|none (default auto). auto probes whether docker can really
+               forward an NVIDIA GPU before asking for one; use none for headless CI.
   GRC_IMAGE    Image name to build/run (default: grc_meta:$ROS_DISTRO).
 USAGE
 }
@@ -82,15 +84,39 @@ fi
 args+=( -e XDG_RUNTIME_DIR=/tmp/xdg )
 
 # GPU: NVIDIA via the container toolkit, otherwise Intel/AMD via /dev/dri.
-if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
-    args+=( --gpus all -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=all )
-    gpu="nvidia (--gpus all)"
-elif [ -d /dev/dri ]; then
-    args+=( --device /dev/dri )
-    gpu="mesa (/dev/dri)"
-else
-    gpu="software"
-fi
+# GRC_GPU=auto|nvidia|dri|none (default auto). A working host driver does not mean docker can
+# forward it -- nvidia-smi passing while the container toolkit's CDI is unconfigured made
+# `docker run --gpus all` fail with "no known GPU vendor found", which killed runs that wanted
+# no GPU at all. So auto probes docker itself and falls back rather than trusting the host.
+want_gpu=${GRC_GPU:-auto}
+gpu_nvidia_usable() {
+    command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1 || return 1
+    docker run --rm --gpus all "$IMAGE" true >/dev/null 2>&1
+}
+case "$want_gpu" in
+    none)
+        gpu="none (GRC_GPU=none)"
+        ;;
+    nvidia)
+        args+=( --gpus all -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=all )
+        gpu="nvidia (forced)"
+        ;;
+    dri)
+        args+=( --device /dev/dri )
+        gpu="mesa (forced)"
+        ;;
+    *)
+        if gpu_nvidia_usable; then
+            args+=( --gpus all -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=all )
+            gpu="nvidia (--gpus all)"
+        elif [ -d /dev/dri ]; then
+            args+=( --device /dev/dri )
+            gpu="mesa (/dev/dri)"
+        else
+            gpu="software"
+        fi
+        ;;
+esac
 
 args+=( -v "${SCRIPT_DIR}:/grc_meta:ro" -w /root )
 
