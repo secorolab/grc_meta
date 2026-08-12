@@ -41,4 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-realtime-tools
 
 # ros images already initialize rosdep; ensure it (no-op if present).
+# uv for the workspace venv: script-setup uses it when present and falls back to venv+pip
+# otherwise, so this only decides how fast setup is, not whether it works.
+RUN pip3 install --no-cache-dir --break-system-packages uv
+
 RUN rosdep init 2>/dev/null || true

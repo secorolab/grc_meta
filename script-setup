@@ -242,20 +242,37 @@ if [ "$MODE" = "full" ]; then
         --skip-keys "catkin python3-future cmake_modules rosconsole roscpp rostest coord2b"
 
     log "Setting up Python virtual environment"
-    # Reuse an existing venv (e.g. created with uv); create one only if absent.
+    # uv when it is available, stdlib venv + pip otherwise: the workspace has to set itself up
+    # on a bare host too, so uv is a speed-up, never a requirement.
     # --system-site-packages keeps ROS 2 build tooling (rosidl/empy) importable.
+    if command -v uv >/dev/null 2>&1; then
+        USE_UV=1
+        log "  using uv ($(uv --version 2>/dev/null))"
+    else
+        USE_UV=0
+        log "  uv not found; using python3 -m venv + pip"
+    fi
+
+    # One entry point for every install below, so the two paths cannot drift apart.
+    py_install() { if [ "$USE_UV" = 1 ]; then run uv pip install --python "$VENV/bin/python" "$@"; else run python -m pip install "$@"; fi; }
+
     if [ ! -e "$VENV/bin/activate" ]; then
-        run python3 -m venv --system-site-packages "$VENV"
+        if [ "$USE_UV" = 1 ]; then
+            run uv venv --system-site-packages "$VENV"
+        else
+            run python3 -m venv --system-site-packages "$VENV"
+        fi
     fi
     source_env "$VENV/bin/activate"
-    run python -m pip install --upgrade pip setuptools wheel
+    # pip itself is still installed under uv: colcon and some ROS tooling shell out to it.
+    py_install --upgrade pip setuptools wheel
 
     log "Installing Python dependencies and workspace packages"
     # empy pinned to 3.3.4: ROS 2's rosidl .em template generators break on empy 4.x.
     # pyparsing is rdflib's core dep; packaging/prettytable/html5rdf are pyshacl's
     # (both rdflib and pyshacl install --no-deps below). scipy backs
     # rdf_utils.models.geometry (undeclared there, pulled in via scene-dsl).
-    run python -m pip install \
+    py_install \
         "empy==3.3.4" \
         "textX[cli]>=4.1.0" \
         textx_ls_core \
@@ -273,17 +290,17 @@ if [ "$MODE" = "full" ]; then
     # the cloned branch wins over pyshacl/owlrl's rdflib<8 pin. Skip when it's already
     # the editable fork to avoid rebuilding it every run.
     if ! python -c "import rdflib,pathlib,sys; sys.exit(0 if pathlib.Path(rdflib.__file__).resolve().is_relative_to(pathlib.Path('$SRC/rdflib').resolve()) else 1)" 2>/dev/null; then
-        run python -m pip install --no-deps -e "$SRC/rdflib"
+        py_install --no-deps -e "$SRC/rdflib"
     fi
-    run python -m pip install --no-deps owlrl pyshacl
+    py_install --no-deps owlrl pyshacl
 
-    run python -m pip install --no-deps -e "$SRC/rec"
-    run python -m pip install --no-deps -e "$SRC/motion-spec"
-    run python -m pip install --no-deps -e "$SRC/motion-spec-dsl"
-    run python -m pip install --no-deps -e "$SRC/bdd-dsl"
-    run python -m pip install --no-deps -e "$SRC/scene-dsl"
-    run python -m pip install --no-deps -e "$SRC/coord-dsl"
-    run python -m pip install --no-deps -e "$SRC/rdf-utils"
+    py_install --no-deps -e "$SRC/rec"
+    py_install --no-deps -e "$SRC/motion-spec"
+    py_install --no-deps -e "$SRC/motion-spec-dsl"
+    py_install --no-deps -e "$SRC/bdd-dsl"
+    py_install --no-deps -e "$SRC/scene-dsl"
+    py_install --no-deps -e "$SRC/coord-dsl"
+    py_install --no-deps -e "$SRC/rdf-utils"
 fi
 
 if [ "$MODE" != "ff" ]; then
