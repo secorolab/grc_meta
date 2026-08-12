@@ -140,7 +140,7 @@ fi
 
 log "Checking required system packages"
 require_command dpkg-query
-REQUIRED_PKGS="build-essential ca-certificates cmake git
+REQUIRED_PKGS="ant build-essential ca-certificates cmake git
 libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev
 libprotobuf-dev libtomlplusplus-dev liburdfdom-dev liburdfdom-headers-dev make ninja-build
 pkg-config protobuf-compiler
@@ -305,6 +305,8 @@ if [ "$MODE" = "full" ]; then
     py_install --no-deps -e "$SRC/scene-dsl"
     py_install --no-deps -e "$SRC/coord-dsl"
     py_install --no-deps -e "$SRC/rdf-utils"
+    # No --no-deps: pulls in mujoco==3.9.0, its only declared dependency.
+    py_install -e "$SRC/mj_kdl_wrapper"
 fi
 
 if [ "$MODE" != "ff" ]; then
