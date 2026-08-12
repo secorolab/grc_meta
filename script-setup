@@ -250,8 +250,22 @@ if [ "$MODE" = "full" ]; then
     # One entry point for every install below.
     py_install() { run uv pip install --python "$VENV/bin/python" "$@"; }
 
+    # A venv built without --system-site-packages cannot see ROS's catkin_pkg, rosidl or empy,
+    # and reusing one turns that into "No module named 'catkin_pkg'" from colcon much later,
+    # where nothing points back here. Check before trusting an existing venv.
+    if [ -e "$VENV/bin/activate" ] \
+       && ! grep -qx 'include-system-site-packages = true' "$VENV/pyvenv.cfg" 2>/dev/null; then
+        die "the venv at $VENV was created without --system-site-packages, so ROS's Python
+       packages (catkin_pkg, rosidl, empy) are invisible to it. Remove it and rerun:
+           rm -rf $(quote_path "$VENV")"
+    fi
+
     if [ ! -e "$VENV/bin/activate" ]; then
-        run uv venv --system-site-packages "$VENV"
+        # Pin the system interpreter: --system-site-packages inherits the site-packages of
+        # whichever Python the venv is built on, and ROS ships catkin_pkg, rosidl and empy into
+        # the system one only. Left to choose, uv may pick a managed build it downloaded, and
+        # the venv then cannot see any of it -- "No module named 'catkin_pkg'" at colcon time.
+        run uv venv --python "$(command -v python3)" --system-site-packages "$VENV"
     fi
     source_env "$VENV/bin/activate"
     # pip itself is still installed under uv: colcon and some ROS tooling shell out to it.
