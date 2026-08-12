@@ -47,7 +47,7 @@ run() {
 }
 
 require_command() {
-    command -v "$1" >/dev/null 2>&1 || die "required command '$1' is missing"
+    command -v "$1" >/dev/null 2>&1 || die "required command '$1' is missing${2:+ -- $2}"
 }
 
 quote_path() {
@@ -169,6 +169,7 @@ require_command rosdep
 require_command colcon
 require_command python3
 require_command git
+require_command uv "install it with 'pip install uv', your package manager, or https://astral.sh/uv"
 
 if [ "$MODE" != "build" ]; then
     if [ ! -f "$WS/colcon.meta" ]; then
@@ -242,26 +243,15 @@ if [ "$MODE" = "full" ]; then
         --skip-keys "catkin python3-future cmake_modules rosconsole roscpp rostest coord2b"
 
     log "Setting up Python virtual environment"
-    # uv when it is available, stdlib venv + pip otherwise: the workspace has to set itself up
-    # on a bare host too, so uv is a speed-up, never a requirement.
-    # --system-site-packages keeps ROS 2 build tooling (rosidl/empy) importable.
-    if command -v uv >/dev/null 2>&1; then
-        USE_UV=1
-        log "  using uv ($(uv --version 2>/dev/null))"
-    else
-        USE_UV=0
-        log "  uv not found; using python3 -m venv + pip"
-    fi
+    # uv is required (checked at startup with the other tools). --system-site-packages keeps
+    # ROS 2 build tooling (rosidl/empy) importable from the venv.
+    log "  uv $(uv --version 2>/dev/null | awk '{print $2}')"
 
-    # One entry point for every install below, so the two paths cannot drift apart.
-    py_install() { if [ "$USE_UV" = 1 ]; then run uv pip install --python "$VENV/bin/python" "$@"; else run python -m pip install "$@"; fi; }
+    # One entry point for every install below.
+    py_install() { run uv pip install --python "$VENV/bin/python" "$@"; }
 
     if [ ! -e "$VENV/bin/activate" ]; then
-        if [ "$USE_UV" = 1 ]; then
-            run uv venv --system-site-packages "$VENV"
-        else
-            run python3 -m venv --system-site-packages "$VENV"
-        fi
+        run uv venv --system-site-packages "$VENV"
     fi
     source_env "$VENV/bin/activate"
     # pip itself is still installed under uv: colcon and some ROS tooling shell out to it.
