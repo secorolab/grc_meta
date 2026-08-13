@@ -38,7 +38,7 @@ does not abort the setup.
 | Flag | What it does |
 |------|-------------|
 | *(none)* | Full setup: import, fast-forward, rosdep, venv, and build |
-| `--ff` | Update repos and submodules, then build only the packages that moved (skip rosdep/venv) |
+| `--ff` | Update repos and submodules, build only the packages that moved, rewrite the environment (skip rosdep/venv) |
 | `--build` | Rebuild with colcon and refresh the editable Python installs (skip import/update) |
 
 Example — update existing repos and rebuild what moved:
@@ -139,6 +139,18 @@ source "$(/path/to/ws/src/grc_meta/script-grc source)"
 
 That is the only place the workspace path is written down: `$GRC` and the rest come
 from the file it sources.
+
+`setup-grc.<ext>` is generated, not tracked, so a pull that changes what grc_meta
+exports leaves every shell on that machine stale. Rewrite it with the cheapest mode
+that does so — no rebuild of the world:
+
+```bash
+ws/src/grc_meta/script-setup --ff ws "$ros_distro"   # updates repos, rebuilds what moved, rewrites the env
+source ws/setup-grc.bash                             # or .zsh, in a new shell
+```
+
+Every mode except `--ff` used to be the only way to get it rewritten; all of them do
+now, since it is a file write and a stale one is what causes "command not found".
 
 Every command works from anywhere inside the workspace tree: the workspace root is
 found by walking up from the current directory (the nearest ancestor holding
