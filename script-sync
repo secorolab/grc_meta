@@ -24,12 +24,8 @@ info() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 note() { printf '  \033[0;33m%s: %s\033[0m\n' "$1" "$2"; }
 moved() { printf '  \033[0;32m%s: %s\033[0m\n' "$1" "$2"; }
 
-# Commits on the upstream side that the checkout does not have yet.
-behind() { git -C "$1" rev-list --count "HEAD..$2"; }
-
-# Tracked changes only: an untracked file survives a checkout or a fast-forward
-# untouched, so it is no reason to hold up the sync.
-dirty() { [ -n "$(git -C "$1" status --porcelain --untracked-files=no)" ]; }
+# shellcheck source=repo-update.sh
+source "$SCRIPT_DIR/repo-update.sh"
 
 # name and declared version of every repository, one pair per line.
 declared() {
@@ -38,46 +34,22 @@ declared() {
 }
 
 info 'Checking grc_meta'
-if upstream="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+if git -C "$SCRIPT_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
     git -C "$SCRIPT_DIR" fetch --quiet --tags origin
-    gone="$(behind "$SCRIPT_DIR" "$upstream")"
-    local_commits="$(git -C "$SCRIPT_DIR" rev-list --count "$upstream..HEAD")"
-    if [ "$gone" -gt 0 ] && [ "$local_commits" -gt 0 ]; then
-        printf 'grc_meta has diverged from %s (%s local, %s upstream).\n' \
-            "$upstream" "$local_commits" "$gone" >&2
-        printf 'Fix the conflicts, then rerun the sync:\n  %s\n' "$0" >&2
-        exit 1
-    fi
-    if [ "$local_commits" -gt 0 ]; then
-        git -C "$SCRIPT_DIR" push --quiet 2>/dev/null \
-            || { printf 'grc_meta: push to %s was rejected; resolve it, then rerun the sync:\n  %s\n' \
-                     "$upstream" "$0" >&2; exit 1; }
-        moved grc_meta "pushed $local_commits commit(s) to $upstream"
-    fi
-    if [ "$gone" -gt 0 ]; then
-        stashed=0
-        if dirty "$SCRIPT_DIR"; then
-            git -C "$SCRIPT_DIR" stash push --quiet -m "script-sync: before updating to $upstream"
-            stashed=1
-        fi
-        if ! git -C "$SCRIPT_DIR" merge --ff-only --quiet "$upstream" 2>/dev/null; then
-            [ "$stashed" -eq 1 ] && git -C "$SCRIPT_DIR" stash pop --quiet
-            printf 'grc_meta has diverged from %s.\nFix the conflicts, then rerun the sync:\n  %s\n' \
-                "$upstream" "$0" >&2
+    set +e; update_repo_branch "$SCRIPT_DIR"; rc=$?; set -e
+    case "$rc" in
+        0)
+            moved grc_meta "$REPO_UPDATE_MSG"
+            printf '\ngrc_meta.repos may now declare different versions. Rerun the sync:\n  %s\n' "$0"
+            exit 0
+            ;;
+        1) note grc_meta "$REPO_UPDATE_MSG" ;;
+        2)
+            printf '\ngrc_meta: %s\n' "$REPO_UPDATE_MSG" >&2
+            printf 'Fix the conflicts, then rerun the sync:\n  %s\n' "$0" >&2
             exit 1
-        fi
-        if [ "$stashed" -eq 1 ] && ! git -C "$SCRIPT_DIR" stash pop --quiet >/dev/null 2>&1; then
-            git -C "$SCRIPT_DIR" reset --hard --quiet
-            printf 'grc_meta updated to %s, but your changes conflict with it.\n' "$upstream" >&2
-            printf 'Apply them (git -C %s stash pop), fix the conflicts, then rerun the sync:\n  %s\n' \
-                "$SCRIPT_DIR" "$0" >&2
-            exit 1
-        fi
-        moved grc_meta "updated to $upstream"
-        printf '\ngrc_meta.repos may now declare different versions. Rerun:\n  %s\n' "$0"
-        exit 0
-    fi
-    [ "$local_commits" -eq 0 ] && note grc_meta 'up to date'
+            ;;
+    esac
 else
     note grc_meta 'no upstream; skipping its own check'
 fi
@@ -103,8 +75,8 @@ while read -r name version; do
     repo="$SRC/$name"
     git -C "$repo" fetch --quiet --tags origin
 
-    # Decide first, move second: a repo that is already where it belongs is never
-    # stashed, so an up-to-date workspace leaves every working tree untouched.
+    # A declared tag is a pin: the checkout belongs on it. Anything else tracks a
+    # branch, which repo-update.sh handles the same way script-setup does.
     if git -C "$repo" rev-parse -q --verify "refs/tags/$version^{commit}" >/dev/null; then
         [ "$(git -C "$repo" rev-parse HEAD)" = "$(git -C "$repo" rev-parse "refs/tags/$version^{commit}")" ] && {
             note "$name" "at $version"; continue
@@ -116,71 +88,36 @@ while read -r name version; do
             note "$name" "is on branch $branch, not the declared pin $version; leaving it alone"
             continue
         fi
-        action=checkout target="$version"
-    elif upstream="$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
-        gone="$(behind "$repo" "$upstream")"
-        local_commits="$(git -C "$repo" rev-list --count "$upstream..HEAD")"
-        if [ "$gone" -gt 0 ] && [ "$local_commits" -gt 0 ]; then
-            # Both sides moved. Reconciling means a merge commit or a rebase, and
-            # neither is this script's call to make.
-            note "$name" "has diverged from $upstream ($local_commits local, $gone upstream)"
-            blocked+=("$name: diverged from $upstream -- merge or rebase it yourself")
-            continue
-        elif [ "$local_commits" -gt 0 ]; then
-            # Nothing to rebuild: publishing commits does not change the checkout.
-            if git -C "$repo" push --quiet 2>/dev/null; then
-                moved "$name" "pushed $local_commits commit(s) to $upstream"
-            else
-                note "$name" "could not push $local_commits commit(s) to $upstream"
-                blocked+=("$name: push to $upstream was rejected")
-            fi
-            continue
-        elif [ "$gone" -eq 0 ]; then
-            note "$name" "up to date with $upstream"
+        stashed=0
+        if repo_dirty "$repo"; then
+            git -C "$repo" stash push --quiet -m "grc: before updating to $version"
+            stashed=1
+        fi
+        if ! git -C "$repo" checkout --quiet "$version" 2>/dev/null; then
+            [ "$stashed" -eq 1 ] && git -C "$repo" stash pop --quiet
+            note "$name" "could not be checked out at $version"
+            blocked+=("$name: could not be checked out at $version")
             continue
         fi
-        action=merge target="$upstream"
+        if [ "$stashed" -eq 1 ] && ! git -C "$repo" stash pop --quiet >/dev/null 2>&1; then
+            git -C "$repo" reset --hard --quiet
+            note "$name" "checked out $version, but your changes conflict with it"
+            blocked+=("$name: stashed changes conflict with $version -- git -C $repo stash pop")
+        elif [ "$stashed" -eq 1 ]; then
+            moved "$name" "checked out $version, local changes restored"
+        else
+            moved "$name" "checked out $version"
+        fi
     else
-        note "$name" "on a branch with no upstream; leaving it alone"
-        continue
-    fi
-
-    # Uncommitted work rides along: stash it, update, put it back. A pop that
-    # conflicts keeps the stash entry, so the changes are still recoverable.
-    stashed=0
-    if dirty "$repo"; then
-        git -C "$repo" stash push --quiet -m "script-sync: before updating to $target"
-        stashed=1
-    fi
-
-    if [ "$action" = merge ]; then
-        # --ff-only, never a merge commit: a diverged branch is for its owner to resolve.
-        git -C "$repo" merge --ff-only --quiet "$target" 2>/dev/null || action=failed
-        done_msg="fast-forwarded to $target"
-        fail_msg="has diverged from $target; reconcile it by hand"
-    else
-        git -C "$repo" checkout --quiet "$target" 2>/dev/null || action=failed
-        done_msg="checked out $target"
-        fail_msg="could not be checked out at $target; resolve it by hand"
-    fi
-
-    if [ "$action" = failed ]; then
-        note "$name" "$fail_msg"
-        blocked+=("$name: $fail_msg")
-        [ "$stashed" -eq 1 ] && git -C "$repo" stash pop --quiet
-        continue
-    fi
-
-    if [ "$stashed" -eq 1 ] && ! git -C "$repo" stash pop --quiet >/dev/null 2>&1; then
-        # A conflicting pop keeps the stash entry but leaves conflict markers in the
-        # tree, which the rebuild below would then compile. Reset to the clean updated
-        # checkout and leave the work in the stash for its owner to apply.
-        git -C "$repo" reset --hard --quiet
-        note "$name" "$done_msg, but your changes conflict with it"
-        blocked+=("$name: stashed changes conflict with $target -- git -C $repo stash pop")
-    else
-        [ "$stashed" -eq 1 ] && done_msg="$done_msg, local changes restored"
-        moved "$name" "$done_msg"
+        set +e; update_repo_branch "$repo"; rc=$?; set -e
+        case "$rc" in
+            0) moved "$name" "$REPO_UPDATE_MSG" ;;
+            1) note "$name" "$REPO_UPDATE_MSG" ;;
+            2) note "$name" "$REPO_UPDATE_MSG"; blocked+=("$name: $REPO_UPDATE_MSG") ;;
+        esac
+        # A conflicting pop is blocked but still moved the checkout, so it is rebuilt:
+        # left out, the rerun would see it up to date and never build it.
+        [ "$REPO_UPDATE_MOVED" -eq 1 ] || continue
     fi
 
     [ -f "$repo/.gitmodules" ] && git -C "$repo" submodule update --init --recursive --quiet

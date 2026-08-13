@@ -28,15 +28,20 @@ step needing sudo) and rerun. It then imports the workspace repositories,
 creates `.venv`, installs the Python workspace packages, runs `colcon build`, and writes
 `ws/setup-grc.<ext>` (`.zsh` when `$SHELL` is zsh, `.bash` otherwise).
 
+Repositories are brought up to date by the same rules `$GRC sync` uses (`repo-update.sh`,
+shared by both): push when ahead, stash/fast-forward/pop when behind, never a merge
+commit. A repo that has diverged or whose stash conflicts is reported at the end and
+does not abort the setup.
+
 **Modes:**
 
 | Flag | What it does |
 |------|-------------|
 | *(none)* | Full setup: import, fast-forward, rosdep, venv, and build |
-| `--ff` | Fast-forward repos and submodules only (skip rosdep/venv/build) |
-| `--build` | Rebuild only (skip import/ff/submodules — assumes already set up) |
+| `--ff` | Update repos and submodules, then build only the packages that moved (skip rosdep/venv) |
+| `--build` | Rebuild with colcon and refresh the editable Python installs (skip import/update) |
 
-Example — fast-forward existing repos without rebuilding:
+Example — update existing repos and rebuild what moved:
 ```bash
 ws/src/grc_meta/script-setup --ff ws "$ros_distro"
 ```
@@ -109,15 +114,25 @@ cd ~/ws
 colcon build
 ```
 
+## $GRC
+
+The generated environment exports one entry point, so a sourced shell never needs the
+script paths, the workspace path or the distro:
+
+| Command | What it does |
+|---------|--------------|
+| `$GRC setup [flags] [<ws> <distro>]` | Full setup; flags (`--clean`, `--ff`, `--build`) pass through |
+| `$GRC sync` | Update every repo to what `grc_meta.repos` declares, rebuild what moved |
+| `$GRC build` | `colcon build` the whole workspace and refresh the editable Python installs |
+| `$GRC mj` | Rebuild `mj_kdl_wrapper` alone: colcon package and venv bindings |
+
+Workspace and distro default to the sourced environment, so `$GRC setup --clean` is
+the full invocation with nothing to remember.
+
 ## sync
 
-`script-sync` brings an already-set-up workspace up to date and rebuilds only what
-moved. The generated environment exports it as `$GRC_SYNC`:
-
-```bash
-source ws/setup-grc.bash          # or .zsh
-"$GRC_SYNC"
-```
+`script-sync` (`$GRC sync`) brings an already-set-up workspace up to date and rebuilds
+only what moved.
 
 It checks grc_meta first — a stale `grc_meta.repos` would sync everything else to
 older versions — and stops after updating itself so the rerun reads the new file.
@@ -174,7 +189,7 @@ compiled extension reports), and any mismatch triggers the rebuild.
 
 ## rebuild mj_kdl_wrapper
 
-`script-mj-kdl-wrapper` rebuilds that one package after a local edit or a version
+`script-mj-kdl-wrapper` (`$GRC mj`) rebuilds that one package after a local edit or a version
 bump. It is the only workspace package that compiles twice — the colcon package
 into `install/` via CMake, and the Python bindings into the workspace venv via
 scikit-build-core — so both steps run. It needs the workspace environment sourced,
@@ -182,8 +197,8 @@ and passes extra arguments through to `colcon build`.
 
 ```bash
 source ws/setup-grc.bash          # or .zsh
-ws/src/grc_meta/script-mj-kdl-wrapper
-ws/src/grc_meta/script-mj-kdl-wrapper --cmake-clean-cache
+"$GRC" mj
+"$GRC" mj --cmake-clean-cache
 ```
 
 ## known issues

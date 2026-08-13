@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# One entry point for the workspace scripts. The generated environment exports it as
+# $GRC, so a sourced shell can say `$GRC sync` instead of remembering paths, the
+# workspace path and the ROS distro.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+
+usage() {
+    cat <<'USAGE'
+Usage: $GRC <command> [args]
+
+  setup [flags] [<workspace> <ros-distro>]
+        Create or update the workspace: import, update, rosdep, venv, build.
+        Workspace and distro default to the sourced environment. Flags
+        (--clean, --ff, --build) pass through to script-setup.
+
+  sync  Update every repository to what grc_meta.repos declares and rebuild
+        what moved.
+
+  build Rebuild the whole workspace with colcon and refresh the editable
+        Python installs.
+
+  mj    Rebuild mj_kdl_wrapper alone: the colcon package and the venv bindings.
+USAGE
+}
+
+die() { printf 'grc: %s\n' "$*" >&2; exit 1; }
+
+# Fill in the workspace and distro from the sourced environment when they were not
+# given, so `$GRC setup --clean` works the same as the full invocation.
+append_defaults() {
+    local positional=0 a
+    for a in "$@"; do
+        case "$a" in -*) ;; *) positional=$((positional + 1)) ;; esac
+    done
+    [ "$positional" -ge 2 ] && { printf '%s\n' "$@"; return 0; }
+    [ -n "${GRC_WS:-}" ] && [ -n "${ROS_DISTRO:-}" ] \
+        || die "no workspace given, and GRC_WS/ROS_DISTRO are unset -- source the workspace environment or pass <workspace> <ros-distro>"
+    printf '%s\n' "$@" "$GRC_WS" "$ROS_DISTRO"
+}
+
+cmd="${1:-}"
+[ "$#" -gt 0 ] && shift
+
+case "$cmd" in
+    setup)
+        mapfile -t args < <(append_defaults "$@")
+        exec "$SCRIPT_DIR/script-setup" "${args[@]}"
+        ;;
+    sync)
+        exec "$SCRIPT_DIR/script-sync" "$@"
+        ;;
+    build)
+        mapfile -t args < <(append_defaults --build "$@")
+        exec "$SCRIPT_DIR/script-setup" "${args[@]}"
+        ;;
+    mj)
+        exec "$SCRIPT_DIR/script-mj-kdl-wrapper" "$@"
+        ;;
+    ''|-h|--help|help)
+        usage
+        ;;
+    *)
+        printf 'grc: unknown command %s\n\n' "$cmd" >&2
+        usage >&2
+        exit 2
+        ;;
+esac

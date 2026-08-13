@@ -17,7 +17,7 @@ Usage: script-setup [--clean] [--ff|--build] <workspace-path> <ros-distro>
 Creates and builds a ROS 2 workspace.
 
 Modes (default: full setup & build):
-  --ff      Fast-forward repos and submodules only (skip build).
+  --ff      Update repos and submodules, then build only what moved.
   --build   Rebuild only (assumes --ff or full setup was already run).
 
 Options:
@@ -103,6 +103,8 @@ if [ "$#" -ne 2 ]; then
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=repo-update.sh
+source "$SCRIPT_DIR/repo-update.sh"
 REPOS_FILE="$SCRIPT_DIR/grc_meta.repos"
 # GRC_COLCON_META overrides the colcon meta (e.g. CI builds without the Kinova
 # Kortex hardware backend, which needs a proprietary artifactory download).
@@ -112,6 +114,9 @@ COLCON_DEFAULTS="$SCRIPT_DIR/colcon_defaults.yaml"
 [ -f "$REPOS_FILE" ] || die "missing $REPOS_FILE"
 [ -f "$COLCON_META" ] || die "missing $COLCON_META"
 [ -f "$COLCON_DEFAULTS" ] || die "missing $COLCON_DEFAULTS"
+
+UPDATED=()   # repos whose checkout moved, so their build is stale
+BLOCKED=()   # repos needing a human: diverged, rejected push, conflicting stash
 
 GRC_GIT_TRANSPORT="${GRC_GIT_TRANSPORT:-ssh}"
 ROS_DISTRO="$2"
@@ -132,6 +137,25 @@ BIN="$WS/bin"
 VENV="$WS/.venv"
 ENV_FILE="$WS/setup-grc${shell_ext}"
 GENERATED_REPOS="$WS/.grc_meta.repos"
+
+# One entry point for every Python install. --python rather than an activated venv:
+# it works the same from any mode, sourced or not.
+py_install() { run uv pip install --python "$VENV/bin/python" "$@"; }
+
+# The workspace's own packages. Editable, so a source edit needs no reinstall --
+# except mj_kdl_wrapper, which compiles an extension and keeps its declared deps.
+install_workspace_packages() {
+    py_install --no-deps -e "$SRC/rec"
+    py_install --no-deps -e "$SRC/rdf-utils"
+    py_install --no-deps -e "$SRC/scene-dsl"
+    py_install --no-deps -e "$SRC/coord-dsl"
+    py_install --no-deps -e "$SRC/motion-spec"
+    py_install --no-deps -e "$SRC/motion-spec-dsl"
+    py_install --no-deps -e "$SRC/bdd-dsl"
+    py_install --no-deps -e "$SRC/robbdd"
+    # No --no-deps: pulls in mujoco==3.9.0, its only declared dependency.
+    py_install -e "$SRC/mj_kdl_wrapper"
+}
 
 if [ "$CLEAN" -eq 1 ]; then
     log "Cleaning build/ install/ log/"
@@ -206,16 +230,20 @@ IMPORTED_DIRS=("${IMPORTED_DIRS[@]/#/$SRC/}")
 
 if [ "$MODE" != "build" ]; then
     # vcs import checks out the declared ref but never advances a stale local branch,
-    # so fast-forward each repo to its upstream (--ff-only fails on diverged branches
-    # rather than running stale code; detached/pinned repos have no upstream).
-    log "Fast-forwarding workspace repositories"
+    # so bring each repo in line with its upstream. repo-update.sh decides how, the
+    # same way script-sync does: push when ahead, stash/fast-forward/pop when behind,
+    # and leave a diverged or conflicting repo for its owner instead of aborting the
+    # whole setup over it.
+    log "Updating workspace repositories"
     for repo in "${IMPORTED_DIRS[@]}"; do
         [ -d "$repo/.git" ] || continue
         printf "  ${YELLOW}%s${NC}\n" "$repo"
         run git -C "$repo" fetch --quiet --tags origin
-        if upstream="$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
-            run git -C "$repo" merge --ff-only --quiet "$upstream"
-        fi
+        set +e; update_repo_branch "$repo"; rc=$?; set -e
+        [ -n "$REPO_UPDATE_MSG" ] && printf "    %s\n" "$REPO_UPDATE_MSG"
+        [ "$rc" -eq 2 ] && BLOCKED+=("$(basename "$repo"): $REPO_UPDATE_MSG")
+        # Moved is not the same as unblocked: a conflicting pop is both.
+        [ "$REPO_UPDATE_MOVED" -eq 1 ] && UPDATED+=("$repo")
     done
 
     # vcs import does not fetch git submodules (e.g. PyKDL's pybind11), so init them.
@@ -225,6 +253,26 @@ if [ "$MODE" != "build" ]; then
             printf "  ${YELLOW}%s${NC}\n" "$repo"
             run git -C "$repo" submodule update --init --recursive
         }
+    done
+fi
+
+if [ "$MODE" = "ff" ] && [ "${#UPDATED[@]}" -gt 0 ]; then
+    # --ff skips the workspace build, which would leave updated sources with stale
+    # binaries. Build just the packages that moved.
+    log "Rebuilding updated packages"
+    ff_build_dirs=()
+    for repo in "${UPDATED[@]}"; do
+        [ "$(basename "$repo")" = mj_kdl_wrapper ] || ff_build_dirs+=("$repo")
+    done
+    cd "$WS"
+    if [ "${#ff_build_dirs[@]}" -gt 0 ]; then
+        run colcon build --base-paths "${ff_build_dirs[@]}" --metas colcon.meta
+    fi
+    for repo in "${UPDATED[@]}"; do
+        # mj_kdl_wrapper compiles twice (colcon and the venv bindings); its script does both.
+        if [ "$(basename "$repo")" = mj_kdl_wrapper ] && [ -x "$VENV/bin/python" ]; then
+            GRC_WS="$WS" run "$SCRIPT_DIR/script-mj-kdl-wrapper"
+        fi
     done
 fi
 
@@ -245,9 +293,6 @@ if [ "$MODE" = "full" ]; then
     # uv is required (checked at startup with the other tools). --system-site-packages keeps
     # ROS 2 build tooling (rosidl/empy) importable from the venv.
     log "  uv $(uv --version 2>/dev/null | awk '{print $2}')"
-
-    # One entry point for every install below.
-    py_install() { run uv pip install --python "$VENV/bin/python" "$@"; }
 
     # A venv built without --system-site-packages cannot see ROS's catkin_pkg, rosidl or empy,
     # and reusing one turns that into "No module named 'catkin_pkg'" from colcon much later,
@@ -297,16 +342,7 @@ if [ "$MODE" = "full" ]; then
     fi
     py_install --no-deps owlrl pyshacl
 
-    py_install --no-deps -e "$SRC/rec"
-    py_install --no-deps -e "$SRC/rdf-utils"
-    py_install --no-deps -e "$SRC/scene-dsl"
-    py_install --no-deps -e "$SRC/coord-dsl"
-    py_install --no-deps -e "$SRC/motion-spec"
-    py_install --no-deps -e "$SRC/motion-spec-dsl"
-    py_install --no-deps -e "$SRC/bdd-dsl"
-    py_install --no-deps -e "$SRC/robbdd"
-    # No --no-deps: pulls in mujoco==3.9.0, its only declared dependency.
-    py_install -e "$SRC/mj_kdl_wrapper"
+    install_workspace_packages
 fi
 
 if [ "$MODE" != "ff" ]; then
@@ -389,10 +425,8 @@ printf 'export INSTALL=%s\\n' "$(quote_path "$WS/install")"
 export INSTALL=$(quote_path "$WS/install")
 printf 'export GRC_WS=%s\\n' "$(quote_path "$WS")"
 export GRC_WS=$(quote_path "$WS")
-printf 'export GRC_SCRIPT_SETUP=%s\\n' "$(quote_path "$SCRIPT_DIR/script-setup")"
-export GRC_SCRIPT_SETUP=$(quote_path "$SCRIPT_DIR/script-setup")
-printf 'export GRC_SYNC=%s\\n' "$(quote_path "$SCRIPT_DIR/script-sync")"
-export GRC_SYNC=$(quote_path "$SCRIPT_DIR/script-sync")
+printf 'export GRC=%s\\n' "$(quote_path "$SCRIPT_DIR/script-grc")"
+export GRC=$(quote_path "$SCRIPT_DIR/script-grc")
 printf 'add to PATH: %s\\n' "$(quote_path "$BIN")"
 _grc_prepend_path "$(quote_path "$BIN")"
 
@@ -417,7 +451,15 @@ if [ "$MODE" != "ff" ]; then
     log "Building colcon workspace"
     cd "$WS"
     run colcon build --base-paths "${IMPORTED_DIRS[@]}" --metas colcon.meta
+fi
 
+if [ "$MODE" = "build" ]; then
+    # A rebuild also refreshes the editable installs: a workspace package that gained
+    # an entry point or a dependency needs reinstalling, and the checkout may have
+    # moved since the last full setup.
+    [ -x "$VENV/bin/python" ] || die "no virtualenv at $VENV -- run a full setup first"
+    log "Refreshing the workspace Python packages"
+    install_workspace_packages
 fi
 
 if [ "$MODE" != "ff" ]; then
@@ -432,3 +474,11 @@ log "Setup complete"
 printf "${GREEN}Source this environment in new shells:${NC}\n"
 printf "  ${CYAN}source %s${NC}\n" "$(quote_path "$ENV_FILE")"
 printf "  ${CYAN}motion-spec health --target mujoco${NC}\n"
+
+if [ "${#BLOCKED[@]}" -gt 0 ]; then
+    printf "\n${BOLD}${RED}Could not update %d repositories:${NC}\n" "${#BLOCKED[@]}" >&2
+    for entry in "${BLOCKED[@]}"; do printf "  %s\n" "$entry" >&2; done
+    printf "\nFix the conflicts, then rerun:\n  ${CYAN}%s --ff %s %s${NC}\n" \
+        "$(quote_path "$SCRIPT_DIR/script-setup")" "$(quote_path "$WS")" "$ROS_DISTRO" >&2
+    exit 1
+fi
