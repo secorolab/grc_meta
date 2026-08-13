@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Rebuild mj_kdl_wrapper in a workspace script-setup has already prepared: the colcon
+# package into install/, then the Python bindings into the workspace venv. The two
+# compile the C++ separately (colcon via CMake, the wheel via scikit-build-core), so a
+# source change needs both. Extra arguments are passed through to colcon build.
+set -euo pipefail
+
+: "${GRC_WS:?is unset -- source the workspace environment (setup-grc.zsh|bash) first}"
+
+PKG="$GRC_WS/src/mj_kdl_wrapper"
+[ -d "$PKG" ] || { printf 'no mj_kdl_wrapper at %s\n' "$PKG" >&2; exit 1; }
+
+for cmd in colcon uv; do
+    command -v "$cmd" >/dev/null 2>&1 \
+        || { printf "required command '%s' is missing\n" "$cmd" >&2; exit 1; }
+done
+
+printf '\n\033[1;36m==> Building the colcon package\033[0m\n'
+cd "$GRC_WS"
+colcon build --base-paths "$PKG" --metas "$GRC_WS/colcon.meta" "$@"
+
+printf '\n\033[1;36m==> Installing the Python bindings\033[0m\n'
+# --reinstall-package: an editable scikit-build-core install does not rebuild the
+# extension on a source change, so uv would see the package installed and skip it.
+uv pip install --python "$GRC_WS/.venv/bin/python" \
+    --reinstall-package mj-kdl-wrapper -e "$PKG"
+
+printf '\n\033[0;32mmj_kdl_wrapper %s installed into %s and the venv\033[0m\n' \
+    "$("$GRC_WS/.venv/bin/python" -c 'import mj_kdl_wrapper; print(mj_kdl_wrapper.__version__)')" \
+    "$GRC_WS/install"

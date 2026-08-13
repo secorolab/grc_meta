@@ -109,6 +109,20 @@ cd ~/ws
 colcon build
 ```
 
+## rebuild mj_kdl_wrapper
+
+`script-mj-kdl-wrapper` rebuilds that one package after a local edit or a version
+bump. It is the only workspace package that compiles twice — the colcon package
+into `install/` via CMake, and the Python bindings into the workspace venv via
+scikit-build-core — so both steps run. It needs the workspace environment sourced,
+and passes extra arguments through to `colcon build`.
+
+```bash
+source ws/setup-grc.bash          # or .zsh
+ws/src/grc_meta/script-mj-kdl-wrapper
+ws/src/grc_meta/script-mj-kdl-wrapper --cmake-clean-cache
+```
+
 ## known issues
 
 - **admittance_arc_single fails to build on Lyrical.** Its ROS-publish monitor
