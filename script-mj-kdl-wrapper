@@ -25,18 +25,22 @@ have="$(sed -n 's/^set(MJ_KDL_VERSION "\([^"]*\)").*/\1/p' "$PKG/cmake/Versions.
 
 if [ -n "$pin" ] && [ -n "$have" ] && [ "$have" != "${pin#v}" ] \
    && [ "$(printf '%s\n%s\n' "$have" "${pin#v}" | sort -V | head -1)" = "$have" ]; then
-    if [ -n "$(git -C "$PKG" status --porcelain)" ]; then
-        printf '%s is at %s, older than the %s pin, but has uncommitted changes.\n' \
-            "$PKG" "$have" "$pin" >&2
-        printf 'Stash them and rerun:\n  git -C %s stash -u\n  %s\n' "$PKG" "$0" >&2
-        exit 1
-    fi
     printf '\n\033[1;36m==> Updating the checkout to %s (was %s)\033[0m\n' "$pin" "$have"
     git -C "$PKG" rev-parse -q --verify "refs/tags/$pin^{commit}" >/dev/null \
         || git -C "$PKG" fetch --quiet --tags origin
     from="$(git -C "$PKG" symbolic-ref -q --short HEAD || git -C "$PKG" rev-parse --short HEAD)"
+    # Tracked changes ride along; untracked files survive a checkout untouched.
+    stashed=0
+    if [ -n "$(git -C "$PKG" status --porcelain --untracked-files=no)" ]; then
+        git -C "$PKG" stash push --quiet -m "script-mj-kdl-wrapper: before updating to $pin"
+        stashed=1
+    fi
     git -C "$PKG" checkout --quiet "$pin"
     printf '  moved off %s; it still points at the same commit\n' "$from"
+    if [ "$stashed" -eq 1 ] && ! git -C "$PKG" stash pop --quiet 2>/dev/null; then
+        printf '  your changes conflict with %s; they are kept in its stash list\n' "$pin" >&2
+        exit 1
+    fi
 fi
 
 printf '\n\033[1;36m==> Building the colcon package\033[0m\n'

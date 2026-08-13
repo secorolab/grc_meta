@@ -128,25 +128,39 @@ Then, per repo, the declared version decides what outdated means:
 | a tag | is the checkout on that tag? | check it out (a moved pin downgrades too) |
 | anything else | is the current branch behind its upstream? | fast-forward it |
 
-**No repo ever loses local work.** Uncommitted changes anywhere — tracked or
-untracked — stop the run before it touches a single repo, so the workspace is never
-left at a mix of old and new versions. Every affected repo is listed with the command
-to clear it:
+A branch that is *ahead* of its upstream is pushed instead of pulled, so local commits
+are published rather than left behind. Nothing is rebuilt for a push: publishing
+commits does not change the checkout.
+
+**No merge commits, ever.** Every update is `--ff-only`. A branch that is both ahead
+and behind is left exactly as it is — reconciling it means a merge or a rebase, and
+which one is yours to choose.
+
+**No repo ever loses local work.** Uncommitted changes in a repo that has to move are
+stashed, the update runs, and the stash is popped back. Only tracked changes are
+stashed: an untracked file survives a checkout untouched, so it is left alone. A repo
+that is already where it belongs is never stashed at all.
+
+When a pop conflicts, the stash entry is kept, the working tree is reset to the clean
+updated checkout — otherwise the rebuild would compile the conflict markers — and the
+repo is reported at the end alongside anything else that could not be updated:
 
 ```
-Uncommitted changes in: motion-spec mj_kdl_wrapper
-Nothing has been touched. Stash them and rerun:
-  git -C .../src/motion-spec stash -u
-  git -C .../src/mj_kdl_wrapper stash -u
+Could not update 2 repositories:
+  pop_conflict: stashed changes conflict with origin/main -- git -C .../pop_conflict stash pop
+  diverged: diverged from origin/main -- merge or rebase it yourself
+
+Fix the conflicts, then rerun the sync:
   .../script-sync
 ```
 
-`stash -u` because an untracked file blocks a checkout just as a modified one does,
-and a plain `stash` would leave it behind. Committed local work is reported and
-skipped instead: a diverged branch, a branch with no upstream, and a tag-pinned repo
-sitting on a *branch* — `vcs import` leaves a pinned repo detached, so a branch there
-is deliberate work that moving onto the tag would silently detach. Nothing is ever
-forced, stashed or reset for you.
+That report comes *after* the rebuild and exits 1. Repos that did sync are rebuilt
+first on purpose: one that moved but never got rebuilt would look up to date to the
+rerun, and its build would be skipped for good.
+
+A tag-pinned repo sitting on a *branch* is also left alone — `vcs import` leaves a
+pinned repo detached, so a branch there is deliberate work that moving onto the tag
+would silently detach.
 
 A repo declared but not checked out is an error — it needs rosdep and the Python
 install, so run `script-setup`. Repos that moved are rebuilt with `colcon build`, and
