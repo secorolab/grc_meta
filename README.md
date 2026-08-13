@@ -28,7 +28,7 @@ step needing sudo) and rerun. It then imports the workspace repositories,
 creates `.venv`, installs the Python workspace packages, runs `colcon build`, and writes
 `ws/setup-grc.<ext>` (`.zsh` when `$SHELL` is zsh, `.bash` otherwise).
 
-Repositories are brought up to date by the same rules `$GRC sync` uses (`repo-update.sh`,
+Repositories are brought up to date by the same rules `$GRC sync` uses (`grc-lib.sh`,
 shared by both): push when ahead, stash/fast-forward/pop when behind, never a merge
 commit. A repo that has diverged or whose stash conflicts is reported at the end and
 does not abort the setup.
@@ -126,8 +126,12 @@ script paths, the workspace path or the distro:
 | `$GRC build` | `colcon build` the whole workspace and refresh the editable Python installs |
 | `$GRC mj` | Rebuild `mj_kdl_wrapper` alone: colcon package and venv bindings |
 
-Workspace and distro default to the sourced environment, so `$GRC setup --clean` is
-the full invocation with nothing to remember.
+Every command works from anywhere inside the workspace tree: the workspace root is
+found by walking up from the current directory (the nearest ancestor holding
+`src/grc_meta`), so `$GRC setup --clean` needs no arguments and colcon still builds
+into the workspace root rather than wherever you happened to be. `$GRC_WS` is used
+first when the environment is sourced, and a command run from outside any workspace
+falls back to the checkout the script itself lives in.
 
 ## sync
 

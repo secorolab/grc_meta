@@ -10,9 +10,12 @@
 # when they conflict; a diverged branch or one with no upstream is reported, not touched.
 set -euo pipefail
 
-: "${GRC_WS:?is unset -- source the workspace environment (setup-grc.zsh|bash) first}"
-
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=grc-lib.sh
+source "$SCRIPT_DIR/grc-lib.sh"
+
+GRC_WS="$(find_workspace "$SCRIPT_DIR")" \
+    || { printf 'no workspace here: run this from inside one, or source its environment\n' >&2; exit 1; }
 REPOS_FILE="$SCRIPT_DIR/grc_meta.repos"
 SRC="$GRC_WS/src"
 
@@ -24,8 +27,6 @@ info() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 note() { printf '  \033[0;33m%s: %s\033[0m\n' "$1" "$2"; }
 moved() { printf '  \033[0;32m%s: %s\033[0m\n' "$1" "$2"; }
 
-# shellcheck source=repo-update.sh
-source "$SCRIPT_DIR/repo-update.sh"
 
 # name and declared version of every repository, one pair per line.
 declared() {
@@ -76,7 +77,7 @@ while read -r name version; do
     git -C "$repo" fetch --quiet --tags origin
 
     # A declared tag is a pin: the checkout belongs on it. Anything else tracks a
-    # branch, which repo-update.sh handles the same way script-setup does.
+    # branch, which grc-lib.sh handles the same way script-setup does.
     if git -C "$repo" rev-parse -q --verify "refs/tags/$version^{commit}" >/dev/null; then
         [ "$(git -C "$repo" rev-parse HEAD)" = "$(git -C "$repo" rev-parse "refs/tags/$version^{commit}")" ] && {
             note "$name" "at $version"; continue

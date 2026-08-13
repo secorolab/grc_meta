@@ -103,8 +103,8 @@ if [ "$#" -ne 2 ]; then
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-# shellcheck source=repo-update.sh
-source "$SCRIPT_DIR/repo-update.sh"
+# shellcheck source=grc-lib.sh
+source "$SCRIPT_DIR/grc-lib.sh"
 REPOS_FILE="$SCRIPT_DIR/grc_meta.repos"
 # GRC_COLCON_META overrides the colcon meta (e.g. CI builds without the Kinova
 # Kortex hardware backend, which needs a proprietary artifactory download).
@@ -230,7 +230,7 @@ IMPORTED_DIRS=("${IMPORTED_DIRS[@]/#/$SRC/}")
 
 if [ "$MODE" != "build" ]; then
     # vcs import checks out the declared ref but never advances a stale local branch,
-    # so bring each repo in line with its upstream. repo-update.sh decides how, the
+    # so bring each repo in line with its upstream. grc-lib.sh decides how, the
     # same way script-sync does: push when ahead, stash/fast-forward/pop when behind,
     # and leave a diverged or conflicting repo for its owner instead of aborting the
     # whole setup over it.

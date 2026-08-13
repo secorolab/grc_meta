@@ -1,8 +1,38 @@
-# Shared by script-setup and script-sync: how a workspace repository is brought in
-# line with its upstream. Both must agree on this, or the same repo ends up in a
-# different state depending on which script last touched it.
+# Helpers shared by the grc scripts. Both script-setup and script-sync must agree on
+# how a repository is updated, or the same repo ends up in a different state depending
+# on which one last touched it.
 #
 # Sourced, not executed.
+
+# The workspace root, so every command works from anywhere inside the tree: the
+# sourced environment first, then the nearest ancestor of the current directory that
+# holds src/grc_meta, and finally the checkout the calling script lives in ($1, its
+# own directory). Prints the path; returns 1 when there is no workspace to find.
+find_workspace() {
+    local dir="$PWD" candidate
+
+    if [ -n "${GRC_WS:-}" ] && [ -d "$GRC_WS/src/grc_meta" ]; then
+        printf '%s\n' "$GRC_WS"
+        return 0
+    fi
+
+    while [ "$dir" != / ] && [ -n "$dir" ]; do
+        if [ -d "$dir/src/grc_meta" ]; then
+            printf '%s\n' "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+
+    # Run from outside any workspace (a cron job, another repo): fall back to the
+    # tree this script is checked out in, which is <workspace>/src/grc_meta.
+    if [ -n "${1:-}" ] && candidate="$(cd -- "$1/../.." 2>/dev/null && pwd -P)" \
+       && [ -d "$candidate/src/grc_meta" ]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+    return 1
+}
 
 # Tracked changes only: an untracked file survives a checkout or a fast-forward
 # untouched, so it is no reason to hold up an update.

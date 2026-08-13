@@ -5,6 +5,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=grc-lib.sh
+source "$SCRIPT_DIR/grc-lib.sh"
 
 usage() {
     cat <<'USAGE'
@@ -12,7 +14,8 @@ Usage: $GRC <command> [args]
 
   setup [flags] [<workspace> <ros-distro>]
         Create or update the workspace: import, update, rosdep, venv, build.
-        Workspace and distro default to the sourced environment. Flags
+        Workspace is found from the current directory, distro from the
+        environment. Flags
         (--clean, --ff, --build) pass through to script-setup.
 
   sync  Update every repository to what grc_meta.repos declares and rebuild
@@ -27,17 +30,20 @@ USAGE
 
 die() { printf 'grc: %s\n' "$*" >&2; exit 1; }
 
-# Fill in the workspace and distro from the sourced environment when they were not
-# given, so `$GRC setup --clean` works the same as the full invocation.
+# Fill in the workspace and distro when they were not given, so `$GRC setup --clean`
+# works from anywhere inside the tree. The workspace is found by walking up from the
+# current directory; the distro has no such marker, so it comes from the environment.
 append_defaults() {
-    local positional=0 a
+    local positional=0 a ws
     for a in "$@"; do
         case "$a" in -*) ;; *) positional=$((positional + 1)) ;; esac
     done
     [ "$positional" -ge 2 ] && { printf '%s\n' "$@"; return 0; }
-    [ -n "${GRC_WS:-}" ] && [ -n "${ROS_DISTRO:-}" ] \
-        || die "no workspace given, and GRC_WS/ROS_DISTRO are unset -- source the workspace environment or pass <workspace> <ros-distro>"
-    printf '%s\n' "$@" "$GRC_WS" "$ROS_DISTRO"
+    ws="$(find_workspace "$SCRIPT_DIR")" \
+        || die "no workspace here -- run this from inside one, or pass <workspace> <ros-distro>"
+    [ -n "${ROS_DISTRO:-}" ] \
+        || die "ROS_DISTRO is unset -- source the workspace environment, or pass <workspace> <ros-distro>"
+    printf '%s\n' "$@" "$ws" "$ROS_DISTRO"
 }
 
 cmd="${1:-}"
