@@ -128,10 +128,17 @@ Then, per repo, the declared version decides what outdated means:
 | a tag | is the checkout on that tag? | check it out (a moved pin downgrades too) |
 | anything else | is the current branch behind its upstream? | fast-forward it |
 
-Local work is never discarded: a dirty tree, a diverged branch, or a branch with no
-upstream is reported and skipped. A repo declared but not checked out is an error —
-it needs rosdep and the Python install, so run `script-setup`. Repos that moved are
-rebuilt with `colcon build`, and `mj_kdl_wrapper` through the script below.
+**No repo ever loses local work.** Every repo is skipped, with the reason printed,
+when it has uncommitted changes (tracked or untracked), when its branch has diverged
+from upstream, or when its branch has no upstream at all. A tag-pinned repo is also
+left alone while it sits on a *branch*: `vcs import` leaves a pinned repo detached, so
+a branch there is deliberate local work and moving onto the tag would silently detach
+it. grc_meta itself refuses to sync while dirty and behind. Nothing is forced,
+stashed or reset — resolving any of these is left to you.
+
+A repo declared but not checked out is an error — it needs rosdep and the Python
+install, so run `script-setup`. Repos that moved are rebuilt with `colcon build`, and
+`mj_kdl_wrapper` through the script below.
 
 `mj_kdl_wrapper` is checked by what is **installed**, not by what git says: it is
 compiled into `install/` and the venv rather than used from the checkout, so those

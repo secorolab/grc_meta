@@ -26,9 +26,17 @@ moved() { printf '  \033[0;32m%s: %s\033[0m\n' "$1" "$2"; }
 # Commits on the upstream side that the checkout does not have yet.
 behind() { git -C "$1" rev-list --count "HEAD..$2"; }
 
+# Anything a checkout would overwrite: modified tracked files and untracked ones alike.
+dirty() { [ -n "$(git -C "$1" status --porcelain)" ]; }
+
 info 'Checking grc_meta'
 if upstream="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
     git -C "$SCRIPT_DIR" fetch --quiet --tags origin
+    if dirty "$SCRIPT_DIR" && [ "$(behind "$SCRIPT_DIR" "$upstream")" -gt 0 ]; then
+        printf 'grc_meta has uncommitted changes and is behind %s; commit or stash them first\n' \
+            "$upstream" >&2
+        exit 1
+    fi
     if [ "$(behind "$SCRIPT_DIR" "$upstream")" -gt 0 ]; then
         git -C "$SCRIPT_DIR" merge --ff-only --quiet "$upstream" \
             || { printf 'grc_meta has diverged from %s; reconcile it by hand\n' "$upstream" >&2; exit 1; }
@@ -51,14 +59,21 @@ while read -r name version; do
     }
     git -C "$repo" fetch --quiet --tags origin
 
+    if dirty "$repo"; then
+        note "$name" 'has uncommitted changes; leaving it alone'
+        continue
+    fi
+
     if git -C "$repo" rev-parse -q --verify "refs/tags/$version^{commit}" >/dev/null; then
-        # Pinned at a tag: the pin is the truth, so move onto it unless that would
-        # discard uncommitted work.
+        # Pinned at a tag, and the checkout is clean.
         [ "$(git -C "$repo" rev-parse HEAD)" = "$(git -C "$repo" rev-parse "refs/tags/$version^{commit}")" ] && {
             note "$name" "at $version"; continue
         }
-        if [ -n "$(git -C "$repo" status --porcelain)" ]; then
-            note "$name" "has uncommitted changes; not moving it to $version"
+        # A branch here is deliberate local work -- vcs import leaves a pinned repo
+        # detached, so someone checked this out on purpose. Moving onto the tag would
+        # detach them from it silently.
+        if branch="$(git -C "$repo" symbolic-ref -q --short HEAD)"; then
+            note "$name" "is on branch $branch, not the declared pin $version; leaving it alone"
             continue
         fi
         git -C "$repo" checkout --quiet "$version"
