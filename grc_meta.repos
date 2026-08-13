@@ -51,6 +51,10 @@ repositories:
     type: git
     url: git@github.com:minhnh/bdd-dsl.git
     version: main
+  robbdd:
+    type: git
+    url: git@github.com:minhnh/robbdd.git
+    version: main
   mj_kdl_wrapper:
     type: git
     url: git@github.com:vamsikalagaturu/mj_kdl_wrapper.git

@@ -145,7 +145,6 @@ libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev
 libprotobuf-dev libtomlplusplus-dev liburdfdom-dev liburdfdom-headers-dev make ninja-build
 pkg-config protobuf-compiler
 python3-pip python3-venv python3-colcon-common-extensions python3-rosdep
-python3-vcstool
 ros-$ROS_DISTRO-rclcpp ros-$ROS_DISTRO-realtime-tools"
 printf "${YELLOW}+ dpkg-query -W -f='\${Status}' %s${NC}\n" $(echo $REQUIRED_PKGS) >&5
 missing=""
@@ -299,12 +298,13 @@ if [ "$MODE" = "full" ]; then
     py_install --no-deps owlrl pyshacl
 
     py_install --no-deps -e "$SRC/rec"
+    py_install --no-deps -e "$SRC/rdf-utils"
+    py_install --no-deps -e "$SRC/scene-dsl"
+    py_install --no-deps -e "$SRC/coord-dsl"
     py_install --no-deps -e "$SRC/motion-spec"
     py_install --no-deps -e "$SRC/motion-spec-dsl"
     py_install --no-deps -e "$SRC/bdd-dsl"
-    py_install --no-deps -e "$SRC/scene-dsl"
-    py_install --no-deps -e "$SRC/coord-dsl"
-    py_install --no-deps -e "$SRC/rdf-utils"
+    py_install --no-deps -e "$SRC/robbdd"
     # No --no-deps: pulls in mujoco==3.9.0, its only declared dependency.
     py_install -e "$SRC/mj_kdl_wrapper"
 fi
