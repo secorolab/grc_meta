@@ -128,14 +128,17 @@ script paths, the workspace path or the distro:
 | `$GRC source` | Print this workspace's generated environment file, to source |
 
 `source` is the one command that cannot do its own work — a child process cannot
-export into its parent — so it prints the path for the shell to source. That makes a
-shell profile independent of where the workspace lives:
+export into its parent — so it prints the path for the shell to source. It is also
+the only one that needs the full script path, to bootstrap the shell; the rest are
+reached as `$GRC`, which the sourced file exports.
 
 ```bash
 # ~/.zshrc, or ~/.bashrc
-ln -s /path/to/ws/src/grc_meta/script-grc ~/.local/bin/grc   # once
-source "$(grc source)"
+source "$(/path/to/ws/src/grc_meta/script-grc source)"
 ```
+
+That is the only place the workspace path is written down: `$GRC` and the rest come
+from the file it sources.
 
 Every command works from anywhere inside the workspace tree: the workspace root is
 found by walking up from the current directory (the nearest ancestor holding
