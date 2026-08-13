@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Bring an existing workspace up to date with grc_meta.repos and rebuild what moved.
+# grc_meta itself is checked first: a stale grc_meta.repos pins everything below it to
+# older versions, so syncing against one is worse than not syncing at all.
+#
+# Per repo, the declared version decides what "outdated" means: a tag is a pin, so the
+# checkout must sit on that exact tag; anything else tracks a branch, so the branch is
+# fast-forwarded to its upstream. Local work is never discarded -- a dirty tree, a
+# diverged branch or a branch with no upstream is reported and left alone.
+set -euo pipefail
+
+: "${GRC_WS:?is unset -- source the workspace environment (setup-grc.zsh|bash) first}"
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPOS_FILE="$SCRIPT_DIR/grc_meta.repos"
+SRC="$GRC_WS/src"
+
+[ -f "$REPOS_FILE" ] || { printf 'missing %s\n' "$REPOS_FILE" >&2; exit 1; }
+command -v colcon >/dev/null 2>&1 \
+    || { printf "required command 'colcon' is missing\n" >&2; exit 1; }
+
+info() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
+note() { printf '  \033[0;33m%s: %s\033[0m\n' "$1" "$2"; }
+moved() { printf '  \033[0;32m%s: %s\033[0m\n' "$1" "$2"; }
+
+# Commits on the upstream side that the checkout does not have yet.
+behind() { git -C "$1" rev-list --count "HEAD..$2"; }
+
+info 'Checking grc_meta'
+if upstream="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+    git -C "$SCRIPT_DIR" fetch --quiet --tags origin
+    if [ "$(behind "$SCRIPT_DIR" "$upstream")" -gt 0 ]; then
+        git -C "$SCRIPT_DIR" merge --ff-only --quiet "$upstream" \
+            || { printf 'grc_meta has diverged from %s; reconcile it by hand\n' "$upstream" >&2; exit 1; }
+        moved grc_meta "updated to $upstream"
+        printf '\ngrc_meta.repos may now declare different versions. Rerun:\n  %s\n' "$0"
+        exit 0
+    fi
+    note grc_meta 'up to date'
+else
+    note grc_meta 'no upstream; skipping its own check'
+fi
+
+info 'Checking workspace repositories'
+changed=()
+while read -r name version; do
+    repo="$SRC/$name"
+    [ -d "$repo/.git" ] || {
+        printf '%s is declared in grc_meta.repos but not checked out; run script-setup\n' "$name" >&2
+        exit 1
+    }
+    git -C "$repo" fetch --quiet --tags origin
+
+    if git -C "$repo" rev-parse -q --verify "refs/tags/$version^{commit}" >/dev/null; then
+        # Pinned at a tag: the pin is the truth, so move onto it unless that would
+        # discard uncommitted work.
+        [ "$(git -C "$repo" rev-parse HEAD)" = "$(git -C "$repo" rev-parse "refs/tags/$version^{commit}")" ] && {
+            note "$name" "at $version"; continue
+        }
+        if [ -n "$(git -C "$repo" status --porcelain)" ]; then
+            note "$name" "has uncommitted changes; not moving it to $version"
+            continue
+        fi
+        git -C "$repo" checkout --quiet "$version"
+        moved "$name" "checked out $version"
+    elif upstream="$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+        [ "$(behind "$repo" "$upstream")" -eq 0 ] && { note "$name" "up to date with $upstream"; continue; }
+        if ! git -C "$repo" merge --ff-only --quiet "$upstream" 2>/dev/null; then
+            note "$name" "has diverged from $upstream; reconcile it by hand"
+            continue
+        fi
+        moved "$name" "fast-forwarded to $upstream"
+    else
+        note "$name" "on a branch with no upstream; leaving it alone"
+        continue
+    fi
+
+    [ -f "$repo/.gitmodules" ] && git -C "$repo" submodule update --init --recursive --quiet
+    changed+=("$name")
+done < <(awk '/^  [^[:space:]].*:[[:space:]]*$/ { sub(/:[[:space:]]*$/, ""); sub(/^[[:space:]]+/, ""); name=$0 }
+              /^    version:/ { print name, $2 }' "$REPOS_FILE")
+
+# mj_kdl_wrapper is compiled into install/ and the venv rather than used from the
+# checkout, so what is installed goes stale on its own -- after an interrupted build, or
+# a checkout that moved outside this script. Ask the artifacts what they are, not git.
+MJ=mj_kdl_wrapper
+MJ_VERSIONS="$SRC/$MJ/cmake/Versions.cmake"
+if [ -f "$MJ_VERSIONS" ]; then
+    want="$(sed -n 's/^set(MJ_KDL_VERSION "\([^"]*\)").*/\1/p' "$MJ_VERSIONS")"
+    have_colcon="$(sed -n 's/^set(PACKAGE_VERSION "\([^"]*\)").*/\1/p' \
+        "$GRC_WS/install/$MJ/lib/cmake/$MJ/${MJ}ConfigVersion.cmake" 2>/dev/null || true)"
+    have_venv="$("$GRC_WS/.venv/bin/python" -c 'import mj_kdl_wrapper; print(mj_kdl_wrapper.__version__)' 2>/dev/null || true)"
+    if [ "$have_colcon" = "$want" ] && [ "$have_venv" = "$want" ]; then
+        note "$MJ" "$want installed"
+    else
+        note "$MJ" "source declares $want, installed ${have_colcon:-none} (colcon) / ${have_venv:-none} (venv)"
+        case " ${changed[*]} " in *" $MJ "*) ;; *) changed+=("$MJ") ;; esac
+    fi
+fi
+
+if [ "${#changed[@]}" -eq 0 ]; then
+    info 'Everything is up to date; nothing to rebuild'
+    exit 0
+fi
+
+info "Rebuilding: ${changed[*]}"
+build_dirs=()
+for name in "${changed[@]}"; do
+    # mj_kdl_wrapper compiles twice (colcon and the venv bindings); its own script does both.
+    [ "$name" = mj_kdl_wrapper ] || build_dirs+=("$SRC/$name")
+done
+
+if [ "${#build_dirs[@]}" -gt 0 ]; then
+    cd "$GRC_WS"
+    colcon build --base-paths "${build_dirs[@]}" --metas "$GRC_WS/colcon.meta"
+fi
+
+for name in "${changed[@]}"; do
+    if [ "$name" = mj_kdl_wrapper ]; then "$SCRIPT_DIR/script-mj-kdl-wrapper"; fi
+done
+
+printf '\n\033[0;32mSynced and rebuilt: %s\033[0m\n' "${changed[*]}"

@@ -391,6 +391,8 @@ printf 'export GRC_WS=%s\\n' "$(quote_path "$WS")"
 export GRC_WS=$(quote_path "$WS")
 printf 'export GRC_SCRIPT_SETUP=%s\\n' "$(quote_path "$SCRIPT_DIR/script-setup")"
 export GRC_SCRIPT_SETUP=$(quote_path "$SCRIPT_DIR/script-setup")
+printf 'export GRC_SYNC=%s\\n' "$(quote_path "$SCRIPT_DIR/script-sync")"
+export GRC_SYNC=$(quote_path "$SCRIPT_DIR/script-sync")
 printf 'add to PATH: %s\\n' "$(quote_path "$BIN")"
 _grc_prepend_path "$(quote_path "$BIN")"
 

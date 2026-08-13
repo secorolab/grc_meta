@@ -109,6 +109,36 @@ cd ~/ws
 colcon build
 ```
 
+## sync
+
+`script-sync` brings an already-set-up workspace up to date and rebuilds only what
+moved. The generated environment exports it as `$GRC_SYNC`:
+
+```bash
+source ws/setup-grc.bash          # or .zsh
+"$GRC_SYNC"
+```
+
+It checks grc_meta first — a stale `grc_meta.repos` would sync everything else to
+older versions — and stops after updating itself so the rerun reads the new file.
+Then, per repo, the declared version decides what outdated means:
+
+| Declared version | Check | Action |
+|------------------|-------|--------|
+| a tag | is the checkout on that tag? | check it out (a moved pin downgrades too) |
+| anything else | is the current branch behind its upstream? | fast-forward it |
+
+Local work is never discarded: a dirty tree, a diverged branch, or a branch with no
+upstream is reported and skipped. A repo declared but not checked out is an error —
+it needs rosdep and the Python install, so run `script-setup`. Repos that moved are
+rebuilt with `colcon build`, and `mj_kdl_wrapper` through the script below.
+
+`mj_kdl_wrapper` is checked by what is **installed**, not by what git says: it is
+compiled into `install/` and the venv rather than used from the checkout, so those
+can be stale while git reports nothing to do. The source `MJ_KDL_VERSION` is compared
+against the installed `PACKAGE_VERSION` and `mj_kdl_wrapper.__version__` (which the
+compiled extension reports), and any mismatch triggers the rebuild.
+
 ## rebuild mj_kdl_wrapper
 
 `script-mj-kdl-wrapper` rebuilds that one package after a local edit or a version
