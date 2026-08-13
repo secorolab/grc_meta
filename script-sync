@@ -5,8 +5,9 @@
 #
 # Per repo, the declared version decides what "outdated" means: a tag is a pin, so the
 # checkout must sit on that exact tag; anything else tracks a branch, so the branch is
-# fast-forwarded to its upstream. Local work is never discarded -- a dirty tree, a
-# diverged branch or a branch with no upstream is reported and left alone.
+# fast-forwarded to its upstream. Local work is never discarded: uncommitted changes
+# anywhere stop the run before it touches a single repo, and a diverged branch or a
+# branch with no upstream is reported and left alone.
 set -euo pipefail
 
 : "${GRC_WS:?is unset -- source the workspace environment (setup-grc.zsh|bash) first}"
@@ -29,12 +30,19 @@ behind() { git -C "$1" rev-list --count "HEAD..$2"; }
 # Anything a checkout would overwrite: modified tracked files and untracked ones alike.
 dirty() { [ -n "$(git -C "$1" status --porcelain)" ]; }
 
+# name and declared version of every repository, one pair per line.
+declared() {
+    awk '/^  [^[:space:]].*:[[:space:]]*$/ { sub(/:[[:space:]]*$/, ""); sub(/^[[:space:]]+/, ""); name=$0 }
+         /^    version:/ { print name, $2 }' "$REPOS_FILE"
+}
+
 info 'Checking grc_meta'
 if upstream="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
     git -C "$SCRIPT_DIR" fetch --quiet --tags origin
     if dirty "$SCRIPT_DIR" && [ "$(behind "$SCRIPT_DIR" "$upstream")" -gt 0 ]; then
-        printf 'grc_meta has uncommitted changes and is behind %s; commit or stash them first\n' \
+        printf 'grc_meta has uncommitted changes and is behind %s.\nStash them and rerun:\n' \
             "$upstream" >&2
+        printf '  git -C %s stash -u\n  %s\n' "$SCRIPT_DIR" "$0" >&2
         exit 1
     fi
     if [ "$(behind "$SCRIPT_DIR" "$upstream")" -gt 0 ]; then
@@ -49,20 +57,39 @@ else
     note grc_meta 'no upstream; skipping its own check'
 fi
 
+# Nothing below moves a checkout until every repo is known clean: aborting halfway
+# through would leave the workspace at a mix of old and new versions.
+info 'Checking for local changes'
+unstashed=()
+uncloned=()
+while read -r name _; do
+    repo="$SRC/$name"
+    if [ ! -d "$repo/.git" ]; then
+        uncloned+=("$name")
+    elif dirty "$repo"; then
+        unstashed+=("$name")
+    fi
+done < <(declared)
+
+if [ "${#uncloned[@]}" -gt 0 ]; then
+    printf 'declared in grc_meta.repos but not checked out: %s\n' "${uncloned[*]}" >&2
+    printf 'They also need rosdep and the Python install, so run script-setup.\n' >&2
+    exit 1
+fi
+
+if [ "${#unstashed[@]}" -gt 0 ]; then
+    printf '\nUncommitted changes in: %s\n' "${unstashed[*]}" >&2
+    printf 'Nothing has been touched. Stash them and rerun:\n' >&2
+    for name in "${unstashed[@]}"; do printf '  git -C %s stash -u\n' "$SRC/$name" >&2; done
+    printf '  %s\n' "$0" >&2
+    exit 1
+fi
+
 info 'Checking workspace repositories'
 changed=()
 while read -r name version; do
     repo="$SRC/$name"
-    [ -d "$repo/.git" ] || {
-        printf '%s is declared in grc_meta.repos but not checked out; run script-setup\n' "$name" >&2
-        exit 1
-    }
     git -C "$repo" fetch --quiet --tags origin
-
-    if dirty "$repo"; then
-        note "$name" 'has uncommitted changes; leaving it alone'
-        continue
-    fi
 
     if git -C "$repo" rev-parse -q --verify "refs/tags/$version^{commit}" >/dev/null; then
         # Pinned at a tag, and the checkout is clean.
@@ -92,8 +119,7 @@ while read -r name version; do
 
     [ -f "$repo/.gitmodules" ] && git -C "$repo" submodule update --init --recursive --quiet
     changed+=("$name")
-done < <(awk '/^  [^[:space:]].*:[[:space:]]*$/ { sub(/:[[:space:]]*$/, ""); sub(/^[[:space:]]+/, ""); name=$0 }
-              /^    version:/ { print name, $2 }' "$REPOS_FILE")
+done < <(declared)
 
 # mj_kdl_wrapper is compiled into install/ and the venv rather than used from the
 # checkout, so what is installed goes stale on its own -- after an interrupted build, or

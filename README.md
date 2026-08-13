@@ -128,13 +128,25 @@ Then, per repo, the declared version decides what outdated means:
 | a tag | is the checkout on that tag? | check it out (a moved pin downgrades too) |
 | anything else | is the current branch behind its upstream? | fast-forward it |
 
-**No repo ever loses local work.** Every repo is skipped, with the reason printed,
-when it has uncommitted changes (tracked or untracked), when its branch has diverged
-from upstream, or when its branch has no upstream at all. A tag-pinned repo is also
-left alone while it sits on a *branch*: `vcs import` leaves a pinned repo detached, so
-a branch there is deliberate local work and moving onto the tag would silently detach
-it. grc_meta itself refuses to sync while dirty and behind. Nothing is forced,
-stashed or reset — resolving any of these is left to you.
+**No repo ever loses local work.** Uncommitted changes anywhere — tracked or
+untracked — stop the run before it touches a single repo, so the workspace is never
+left at a mix of old and new versions. Every affected repo is listed with the command
+to clear it:
+
+```
+Uncommitted changes in: motion-spec mj_kdl_wrapper
+Nothing has been touched. Stash them and rerun:
+  git -C .../src/motion-spec stash -u
+  git -C .../src/mj_kdl_wrapper stash -u
+  .../script-sync
+```
+
+`stash -u` because an untracked file blocks a checkout just as a modified one does,
+and a plain `stash` would leave it behind. Committed local work is reported and
+skipped instead: a diverged branch, a branch with no upstream, and a tag-pinned repo
+sitting on a *branch* — `vcs import` leaves a pinned repo detached, so a branch there
+is deliberate work that moving onto the tag would silently detach. Nothing is ever
+forced, stashed or reset for you.
 
 A repo declared but not checked out is an error — it needs rosdep and the Python
 install, so run `script-setup`. Repos that moved are rebuilt with `colcon build`, and
