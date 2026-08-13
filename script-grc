@@ -15,8 +15,11 @@ Usage: $GRC <command> [args]
   setup [flags] [<workspace> <ros-distro>]
         Create or update the workspace: import, update, rosdep, venv, build.
         Workspace is found from the current directory, distro from the
-        environment. Flags
-        (--clean, --ff, --build) pass through to script-setup.
+        environment. Flags (--clean, --ff, --build) pass through.
+
+  source
+        Print the generated environment file for this workspace, to source:
+            source "$(grc source)"
 
   sync  Update every repository to what grc_meta.repos declares and rebuild
         what moved.
@@ -63,6 +66,23 @@ case "$cmd" in
         ;;
     mj)
         exec "$SCRIPT_DIR/script-mj-kdl-wrapper" "$@"
+        ;;
+    source)
+        # A child process cannot export into its parent, so print the path and let the
+        # shell source it: source "$(grc source)".
+        ws="$(find_workspace "$SCRIPT_DIR")" \
+            || die "no workspace here -- run this from inside one"
+        case "${SHELL##*/}" in
+            zsh) exts=".zsh .bash" ;;
+            *)   exts=".bash .zsh" ;;
+        esac
+        for ext in $exts; do
+            if [ -r "$ws/setup-grc$ext" ]; then
+                printf '%s\n' "$ws/setup-grc$ext"
+                exit 0
+            fi
+        done
+        die "no generated environment in $ws -- run '$(basename "$0") setup' first"
         ;;
     ''|-h|--help|help)
         usage

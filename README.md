@@ -125,6 +125,17 @@ script paths, the workspace path or the distro:
 | `$GRC sync` | Update every repo to what `grc_meta.repos` declares, rebuild what moved |
 | `$GRC build` | `colcon build` the whole workspace and refresh the editable Python installs |
 | `$GRC mj` | Rebuild `mj_kdl_wrapper` alone: colcon package and venv bindings |
+| `$GRC source` | Print this workspace's generated environment file, to source |
+
+`source` is the one command that cannot do its own work — a child process cannot
+export into its parent — so it prints the path for the shell to source. That makes a
+shell profile independent of where the workspace lives:
+
+```bash
+# ~/.zshrc, or ~/.bashrc
+ln -s /path/to/ws/src/grc_meta/script-grc ~/.local/bin/grc   # once
+source "$(grc source)"
+```
 
 Every command works from anywhere inside the workspace tree: the workspace root is
 found by walking up from the current directory (the nearest ancestor holding
