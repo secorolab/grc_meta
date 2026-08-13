@@ -7,6 +7,7 @@ set -euo pipefail
 
 : "${GRC_WS:?is unset -- source the workspace environment (setup-grc.zsh|bash) first}"
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 PKG="$GRC_WS/src/mj_kdl_wrapper"
 [ -d "$PKG" ] || { printf 'no mj_kdl_wrapper at %s\n' "$PKG" >&2; exit 1; }
 
@@ -14,6 +15,29 @@ for cmd in colcon uv; do
     command -v "$cmd" >/dev/null 2>&1 \
         || { printf "required command '%s' is missing\n" "$cmd" >&2; exit 1; }
 done
+
+# grc_meta.repos sets the floor: a checkout older than the pin builds a version the
+# rest of the workspace is not written against, and the failure surfaces far from here
+# as a missing type. A newer checkout (dev carries the next version) is left alone.
+pin="$(awk '/^  [^[:space:]].*:[[:space:]]*$/ { sub(/:[[:space:]]*$/, ""); sub(/^[[:space:]]+/, ""); name=$0 }
+            /^    version:/ && name == "mj_kdl_wrapper" { print $2 }' "$SCRIPT_DIR/grc_meta.repos")"
+have="$(sed -n 's/^set(MJ_KDL_VERSION "\([^"]*\)").*/\1/p' "$PKG/cmake/Versions.cmake" 2>/dev/null || true)"
+
+if [ -n "$pin" ] && [ -n "$have" ] && [ "$have" != "${pin#v}" ] \
+   && [ "$(printf '%s\n%s\n' "$have" "${pin#v}" | sort -V | head -1)" = "$have" ]; then
+    if [ -n "$(git -C "$PKG" status --porcelain)" ]; then
+        printf '%s is at %s, older than the %s pin, but has uncommitted changes.\n' \
+            "$PKG" "$have" "$pin" >&2
+        printf 'Stash them and rerun:\n  git -C %s stash -u\n  %s\n' "$PKG" "$0" >&2
+        exit 1
+    fi
+    printf '\n\033[1;36m==> Updating the checkout to %s (was %s)\033[0m\n' "$pin" "$have"
+    git -C "$PKG" rev-parse -q --verify "refs/tags/$pin^{commit}" >/dev/null \
+        || git -C "$PKG" fetch --quiet --tags origin
+    from="$(git -C "$PKG" symbolic-ref -q --short HEAD || git -C "$PKG" rev-parse --short HEAD)"
+    git -C "$PKG" checkout --quiet "$pin"
+    printf '  moved off %s; it still points at the same commit\n' "$from"
+fi
 
 printf '\n\033[1;36m==> Building the colcon package\033[0m\n'
 cd "$GRC_WS"
