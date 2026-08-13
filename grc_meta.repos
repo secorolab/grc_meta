@@ -11,6 +11,10 @@ repositories:
     type: git
     url: git@github.com:secorolab/bdd_ros2_interfaces.git
     version: main
+  bdd_exec_ros2:
+    type: git
+    url: git@github.com:secorolab/bdd_exec_ros2.git
+    version: jazzy
   aruco_perception:
     type: git
     url: git@github.com:secorolab/aruco_perception.git
