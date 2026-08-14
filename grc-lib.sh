@@ -7,15 +7,21 @@
 # The workspace root, so every command works from anywhere inside the tree: the
 # sourced environment first, then the nearest ancestor of the current directory that
 # holds src/grc_meta, and finally the checkout the calling script lives in ($1, its
-# own directory). Prints the path; returns 1 when there is no workspace to find.
+# own directory). Every candidate is canonicalised with realpath -e, so a relative or
+# symlinked $GRC_WS (or cwd) resolves to the same physical path the rest of the script
+# compares against, instead of a raw string that breaks after the next `cd`. Prints
+# the path; returns 1 when there is no workspace to find.
 find_workspace() {
-    local dir="$PWD" candidate
+    local dir resolved
 
-    if [ -n "${GRC_WS:-}" ] && [ -d "$GRC_WS/src/grc_meta" ]; then
-        printf '%s\n' "$GRC_WS"
+    if [ -n "${GRC_WS:-}" ] \
+       && resolved="$(realpath -e -- "$GRC_WS" 2>/dev/null)" \
+       && [ -d "$resolved/src/grc_meta" ]; then
+        printf '%s\n' "$resolved"
         return 0
     fi
 
+    dir="$(pwd -P)"
     while [ "$dir" != / ] && [ -n "$dir" ]; do
         if [ -d "$dir/src/grc_meta" ]; then
             printf '%s\n' "$dir"
@@ -26,12 +32,40 @@ find_workspace() {
 
     # Run from outside any workspace (a cron job, another repo): fall back to the
     # tree this script is checked out in, which is <workspace>/src/grc_meta.
-    if [ -n "${1:-}" ] && candidate="$(cd -- "$1/../.." 2>/dev/null && pwd -P)" \
-       && [ -d "$candidate/src/grc_meta" ]; then
-        printf '%s\n' "$candidate"
+    if [ -n "${1:-}" ] \
+       && resolved="$(realpath -e -- "$1/../.." 2>/dev/null)" \
+       && [ -d "$resolved/src/grc_meta" ]; then
+        printf '%s\n' "$resolved"
         return 0
     fi
     return 1
+}
+
+# find_workspace, but when every check above comes up empty and the shell is
+# interactive, ask for the path instead of just failing -- the common case for a
+# fresh shell is simply that GRC_WS was never sourced. A blank answer aborts; a
+# non-interactive caller (cron, CI) falls straight through to its own error, since
+# there is no one to prompt. $1 is the caller's SCRIPT_DIR, passed through to
+# find_workspace for its own-checkout fallback.
+require_workspace() {
+    local script_dir="$1" ws answer
+
+    if ws="$(find_workspace "$script_dir")"; then
+        printf '%s\n' "$ws"
+        return 0
+    fi
+
+    [ -t 0 ] || return 1
+    printf 'GRC_WS is not set and no workspace was found from here.\n' >&2
+    printf 'Enter the workspace path (containing src/grc_meta), or leave blank to abort: ' >&2
+    read -r answer
+    [ -n "$answer" ] || return 1
+    ws="$(realpath -e -- "$answer" 2>/dev/null)" && [ -d "$ws/src/grc_meta" ] || {
+        printf 'no src/grc_meta under %s\n' "$answer" >&2
+        return 1
+    }
+    printf 'Using it for this run. To skip this prompt, add to your shell profile (or source setup-grc.zsh):\n  export GRC_WS=%s\n' "$ws" >&2
+    printf '%s\n' "$ws"
 }
 
 # Tracked changes only: an untracked file survives a checkout or a fast-forward

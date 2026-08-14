@@ -9,8 +9,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=grc-lib.sh
 source "$SCRIPT_DIR/grc-lib.sh"
 
-GRC_WS="$(find_workspace "$SCRIPT_DIR")" \
-    || { printf 'no workspace here: run this from inside one, or source its environment\n' >&2; exit 1; }
+GRC_WS="$(require_workspace "$SCRIPT_DIR")" \
+    || { printf 'no workspace here: run this from inside one, set GRC_WS, or source its environment\n' >&2; exit 1; }
 PKG="$GRC_WS/src/mj_kdl_wrapper"
 [ -d "$PKG" ] || { printf 'no mj_kdl_wrapper at %s\n' "$PKG" >&2; exit 1; }
 

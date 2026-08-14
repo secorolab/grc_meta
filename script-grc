@@ -42,8 +42,8 @@ append_defaults() {
         case "$a" in -*) ;; *) positional=$((positional + 1)) ;; esac
     done
     [ "$positional" -ge 2 ] && { printf '%s\n' "$@"; return 0; }
-    ws="$(find_workspace "$SCRIPT_DIR")" \
-        || die "no workspace here -- run this from inside one, or pass <workspace> <ros-distro>"
+    ws="$(require_workspace "$SCRIPT_DIR")" \
+        || die "no workspace here -- run this from inside one, set GRC_WS, or pass <workspace> <ros-distro>"
     [ -n "${ROS_DISTRO:-}" ] \
         || die "ROS_DISTRO is unset -- source the workspace environment, or pass <workspace> <ros-distro>"
     printf '%s\n' "$@" "$ws" "$ROS_DISTRO"
@@ -70,8 +70,8 @@ case "$cmd" in
     source)
         # A child process cannot export into its parent, so print the path and let the
         # shell source it: source "$(grc source)".
-        ws="$(find_workspace "$SCRIPT_DIR")" \
-            || die "no workspace here -- run this from inside one"
+        ws="$(require_workspace "$SCRIPT_DIR")" \
+            || die "no workspace here -- run this from inside one, or set GRC_WS"
         case "${SHELL##*/}" in
             zsh) exts=".zsh .bash" ;;
             *)   exts=".bash .zsh" ;;
