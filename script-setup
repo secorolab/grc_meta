@@ -320,11 +320,15 @@ if [ "$MODE" = "full" ]; then
     # empy pinned to 3.3.4: ROS 2's rosidl .em template generators break on empy 4.x.
     # pyparsing is rdflib's core dep; packaging/prettytable/html5rdf are pyshacl's
     # (both rdflib and pyshacl install --no-deps below). scipy backs
-    # rdf_utils.models.geometry (undeclared there, pulled in via scene-dsl).
+    # rdf_utils.models.geometry (undeclared there, pulled in via scene-dsl). click,
+    # pyld, textx-jinja, behave and trinary are declared deps of the --no-deps
+    # workspace packages below (rec/motion-spec, bdd-dsl/motion-spec-dsl, robbdd,
+    # bdd-dsl, bdd-dsl), which install_workspace_packages therefore skips.
     py_install \
         "empy==3.3.4" \
         "textX[cli]>=4.1.0" \
         textx_ls_core \
+        textx-jinja \
         jinja2 \
         platformdirs \
         numpy \
@@ -333,7 +337,11 @@ if [ "$MODE" = "full" ]; then
         pyparsing \
         packaging \
         prettytable \
-        html5rdf
+        html5rdf \
+        click \
+        pyld \
+        behave \
+        trinary
 
     # rdflib is a project fork (src/rdflib, v8.x): install editable with --no-deps so
     # the cloned branch wins over pyshacl/owlrl's rdflib<8 pin. Skip when it's already
