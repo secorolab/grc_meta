@@ -95,9 +95,14 @@ while read -r name version; do
             stashed=1
         fi
         if ! git -C "$repo" checkout --quiet "$version" 2>/dev/null; then
-            [ "$stashed" -eq 1 ] && git -C "$repo" stash pop --quiet
-            note "$name" "could not be checked out at $version"
-            blocked+=("$name: could not be checked out at $version")
+            if [ "$stashed" -eq 1 ] && ! git -C "$repo" stash pop --quiet >/dev/null 2>&1; then
+                git -C "$repo" reset --hard --quiet
+                note "$name" "could not be checked out at $version, and your stashed changes conflict"
+                blocked+=("$name: could not be checked out at $version; stashed changes conflict -- git -C $repo stash pop")
+            else
+                note "$name" "could not be checked out at $version"
+                blocked+=("$name: could not be checked out at $version")
+            fi
             continue
         fi
         if [ "$stashed" -eq 1 ] && ! git -C "$repo" stash pop --quiet >/dev/null 2>&1; then
