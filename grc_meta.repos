@@ -58,7 +58,7 @@ repositories:
   mj_kdl_wrapper:
     type: git
     url: git@github.com:vamsikalagaturu/mj_kdl_wrapper.git
-    version: v0.3.6
+    version: v0.3.7
   rdf-utils:
     type: git
     url: git@github.com:minhnh/rdf-utils.git
