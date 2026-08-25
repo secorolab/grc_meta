@@ -26,7 +26,8 @@ jobs:
             libprotobuf-dev libtomlplusplus-dev liburdfdom-dev liburdfdom-headers-dev make ninja-build \
             pkg-config protobuf-compiler python3-pip python3-venv \
             python3-colcon-common-extensions python3-rosdep python3-vcstool unzip \
-            ros-${{ inputs.ros_distro }}-rclcpp ros-${{ inputs.ros_distro }}-realtime-tools
+            ros-${{ inputs.ros_distro }}-rclcpp ros-${{ inputs.ros_distro }}-rclcpp-action \
+            ros-${{ inputs.ros_distro }}-realtime-tools
 
       - name: Install uv
         # script-setup requires uv for the workspace venv. Not an apt package on either

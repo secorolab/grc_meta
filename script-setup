@@ -170,7 +170,7 @@ libegl-dev libeigen3-dev libgl-dev libglfw3-dev liborocos-kdl-dev
 libprotobuf-dev libtomlplusplus-dev liburdfdom-dev liburdfdom-headers-dev make ninja-build
 pkg-config protobuf-compiler
 python3-pip python3-venv python3-colcon-common-extensions python3-rosdep
-ros-$ROS_DISTRO-rclcpp ros-$ROS_DISTRO-realtime-tools"
+ros-$ROS_DISTRO-rclcpp ros-$ROS_DISTRO-rclcpp-action ros-$ROS_DISTRO-realtime-tools"
 printf "${YELLOW}+ dpkg-query -W -f='\${Status}' %s${NC}\n" $(echo $REQUIRED_PKGS) >&5
 missing=""
 for pkg in $REQUIRED_PKGS; do
@@ -323,7 +323,9 @@ if [ "$MODE" = "full" ]; then
     # rdf_utils.models.geometry (undeclared there, pulled in via scene-dsl). click,
     # pyld, textx-jinja, behave and trinary are declared deps of the --no-deps
     # workspace packages below (rec/motion-spec, bdd-dsl/motion-spec-dsl, robbdd,
-    # bdd-dsl, bdd-dsl), which install_workspace_packages therefore skips.
+    # bdd-dsl, bdd-dsl), which install_workspace_packages therefore skips. py_trees is no
+    # workspace package's dep: coord-dsl's python behaviour-tree target emits code that
+    # imports it, so the venv needs it to run what was generated.
     py_install \
         "empy==3.3.4" \
         "textX[cli]>=4.1.0" \
@@ -341,7 +343,8 @@ if [ "$MODE" = "full" ]; then
         click \
         pyld \
         behave \
-        trinary
+        trinary \
+        py_trees
 
     # rdflib is a project fork (src/rdflib, v8.x): install editable with --no-deps so
     # the cloned branch wins over pyshacl/owlrl's rdflib<8 pin. Skip when it's already

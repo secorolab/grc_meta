@@ -38,6 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-vcstool \
     unzip \
     ros-${ROS_DISTRO}-rclcpp \
+    ros-${ROS_DISTRO}-rclcpp-action \
     ros-${ROS_DISTRO}-realtime-tools
 
 # ros images already initialize rosdep; ensure it (no-op if present).
